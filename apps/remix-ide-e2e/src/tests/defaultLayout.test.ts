@@ -17,7 +17,7 @@ module.exports = {
 
   'Loads Side Panel': function (browser: NightwatchBrowser) {
     browser.waitForElementVisible('div[data-id="remixIdeSidePanel"]')
-      .assert.containsText('h6[data-id="sidePanelSwapitTitle"]', 'FILE EXPLORERS')
+      .assert.containsText('h6[data-id="sidePanelSwapitTitle"]', 'FILE EXPLORER')
       .waitForElementVisible('div[data-id="filePanelFileExplorerTree"]')
       .waitForElementVisible('[data-id="treeViewLitreeViewItemcontracts"]')
       .waitForElementVisible('[data-id="treeViewLitreeViewItemscripts"]')
@@ -40,21 +40,25 @@ module.exports = {
 
   'Toggles Side Panel': function (browser: NightwatchBrowser) {
     browser.waitForElementVisible('div[data-id="remixIdeSidePanel"]')
-      .assert.containsText('h6[data-id="sidePanelSwapitTitle"]', 'FILE EXPLORERS')
+      .assert.containsText('h6[data-id="sidePanelSwapitTitle"]', 'FILE EXPLORER')
       .clickLaunchIcon('filePanel')
-      .assert.hidden('div[data-id="remixIdeSidePanel"]')
+      .assert.not.visible('div[data-id="remixIdeSidePanel"]')
       .clickLaunchIcon('filePanel')
       .assert.visible('div[data-id="remixIdeSidePanel"]')
-      .assert.containsText('h6[data-id="sidePanelSwapitTitle"]', 'FILE EXPLORERS')
+      .assert.containsText('h6[data-id="sidePanelSwapitTitle"]', 'FILE EXPLORER')
   },
 
   'Toggles Terminal': function (browser: NightwatchBrowser) {
     browser.waitForElementVisible('div[data-id="terminalContainer"]')
-      .assert.visible('div[data-id="terminalContainerDisplay"]')
+      .assert.elementPresent('div[data-id="terminalCli"]')
+      .assert.elementPresent('div[data-id="terminalContainer"]')
+      .waitForElementVisible('div[data-id="terminalContainer"]')
+      .waitForElementVisible('div[data-id="terminalCli"]')
       .click('i[data-id="terminalToggleIcon"]')
       .checkElementStyle('div[data-id="terminalToggleMenu"]', 'height', '35px')
+      .assert.not.elementPresent('div[data-id="terminalCli"]')
       .click('i[data-id="terminalToggleIcon"]')
-      .assert.visible('div[data-id="terminalContainerDisplay"]')
+      .waitForElementVisible('div[data-id="terminalCli"]')
   },
 
   'Switch Tabs using tabs icon': function (browser: NightwatchBrowser) {
@@ -63,9 +67,6 @@ module.exports = {
       .click('[data-id="treeViewLitreeViewItemcontracts"]')
       .openFile('contracts/3_Ballot.sol')
       .assert.containsText('div[title="default_workspace/contracts/3_Ballot.sol"]', '3_Ballot.sol')
-      .click('span[class^=dropdownCaret]')
-      .click('#homeItem')
-      .assert.containsText('div[title="home"]', 'Home')
       .end()
   }
 }

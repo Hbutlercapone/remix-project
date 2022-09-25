@@ -1,14 +1,26 @@
+export type ValidationResult = {
+  valid: boolean,
+  message?: string
+}
+
+/* eslint-disable no-undef */
 export interface ModalDialogProps {
-  id?: string
+  id: string
+  timestamp?: number,
   title?: string,
+  validation?: ValidationResult
+  validationFn?: (value: string) => ValidationResult
   message?: string | JSX.Element,
   okLabel?: string,
-  okFn?: () => void,
+  okFn?: (value?:any) => void,
   cancelLabel?: string,
   cancelFn?: () => void,
   modalClass?: string,
   showCancelIcon?: boolean,
-  hide: boolean,
+  hide?: boolean,
   handleHide: (hideState?: boolean) => void,
-  children?: React.ReactNode
+  children?: React.ReactNode,
+  resolve?: (value?:any) => void,
+  next?: () => void,
+  data?: any
 }

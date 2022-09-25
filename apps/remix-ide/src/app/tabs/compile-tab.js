@@ -1,18 +1,13 @@
 /* global */
 import React from 'react' // eslint-disable-line
-import ReactDOM from 'react-dom'
 import { SolidityCompiler } from '@remix-ui/solidity-compiler' // eslint-disable-line
 import { CompileTabLogic } from '@remix-ui/solidity-compiler' // eslint-disable-line
-import { CompilerApiMixin } from '@remixproject/solidity-compiler-plugin'
+import { CompilerApiMixin } from '@remixproject/solidity-compiler-plugin' // eslint-disable-line
 import { ViewPlugin } from '@remixproject/engine-web'
-import QueryParams from '../../lib/query-params'
+import { QueryParams } from '@remix-project/remix-lib'
 // import { ICompilerApi } from '@remix-project/remix-lib-ts'
 import * as packageJson from '../../../../../package.json'
-
-const yo = require('yo-yo')
-const addTooltip = require('../ui/tooltip')
-
-const css = require('./styles/compile-tab-styles')
+import { compilerConfigChangedToastMsg, compileToastMsg } from '@remix-ui/helper'
 
 const profile = {
   name: 'solidity',
@@ -22,8 +17,9 @@ const profile = {
   kind: 'compiler',
   permission: true,
   location: 'sidePanel',
-  documentation: 'https://remix-ide.readthedocs.io/en/latest/solidity_editor.html',
+  documentation: 'https://remix-ide.readthedocs.io/en/latest/compile.html',
   version: packageJson.version,
+  maintainedBy: 'Remix',
   methods: ['getCompilationResult', 'compile', 'compileWithParameters', 'setCompilerConfig', 'compileFile', 'getCompilerState']
 }
 
@@ -41,27 +37,35 @@ class CompileTab extends CompilerApiMixin(ViewPlugin) { // implements ICompilerA
     this.compiler = this.compileTabLogic.compiler
     this.compileTabLogic.init()
     this.initCompilerApi()
+    this.el = document.createElement('div')
+    this.el.setAttribute('id', 'compileTabView')
   }
 
   renderComponent () {
-    ReactDOM.render(
-      <SolidityCompiler api={this}/>
-      , this.el)
+    // empty method, is a state update needed?
   }
 
   onCurrentFileChanged () {
     this.renderComponent()
   }
 
-  onResetResults () {
-    this.renderComponent()
-  }
+  // onResetResults () {
+  //   this.renderComponent()
+  // }
 
   onSetWorkspace () {
     this.renderComponent()
   }
 
+  onFileRemoved () {
+    this.renderComponent()
+  }
+
   onNoFileSelected () {
+    this.renderComponent()
+  }
+
+  onFileClosed () {
     this.renderComponent()
   }
 
@@ -70,14 +74,7 @@ class CompileTab extends CompilerApiMixin(ViewPlugin) { // implements ICompilerA
   }
 
   render () {
-    if (this.el) return this.el
-    this.el = yo`
-      <div class="${css.debuggerTabView}" id="compileTabView">
-        <div id="compiler" class="${css.compiler}"></div>
-      </div>`
-    this.renderComponent()
-
-    return this.el
+    return <div id='compileTabView'><SolidityCompiler api={this}/></div>
   }
 
   async compileWithParameters (compilationTargets, settings) {
@@ -101,11 +98,13 @@ class CompileTab extends CompilerApiMixin(ViewPlugin) { // implements ICompilerA
     super.setCompilerConfig(settings)
     this.renderComponent()
     // @todo(#2875) should use loading compiler return value to check whether the compiler is loaded instead of "setInterval"
-    addTooltip(yo`<div><b>${this.currentRequest.from}</b> is updating the <b>Solidity compiler configuration</b>.<pre class="text-left">${JSON.stringify(settings, null, '\t')}</pre></div>`)
+    const value = JSON.stringify(settings, null, '\t')
+  
+    this.call('notification', 'toast', compilerConfigChangedToastMsg(this.currentRequest.from, value))
   }
 
   compile (fileName) {
-    addTooltip(yo`<div><b>${this.currentRequest.from}</b> is requiring to compile <b>${fileName}</b></div>`)
+    this.call('notification', 'toast', compileToastMsg(this.currentRequest.from, fileName))
     super.compile(fileName)
   }
 
@@ -115,16 +114,22 @@ class CompileTab extends CompilerApiMixin(ViewPlugin) { // implements ICompilerA
 
   async onActivation () {
     super.onActivation()
-    this.call('filePanel', 'registerContextMenuItem', {
-      id: 'solidity',
-      name: 'compileFile',
-      label: 'Compile',
-      type: [],
-      extension: ['.sol'],
-      path: [],
-      pattern: []
+    this.on('filePanel', 'workspaceInitializationCompleted', () => {
+      this.call('filePanel', 'registerContextMenuItem', {
+        id: 'solidity',
+        name: 'compileFile',
+        label: 'Compile',
+        type: [],
+        extension: ['.sol'],
+        path: [],
+        pattern: []
+      })
     })
-    this.currentFile = await this.call('fileManager', 'file')
+    try {
+      this.currentFile = await this.call('fileManager', 'file')
+    } catch (error) {
+      if (error.message !== 'Error: No such file or directory No file selected') throw error
+    }
   }
 
   getCompilerParameters () {
@@ -138,17 +143,12 @@ class CompileTab extends CompilerApiMixin(ViewPlugin) { // implements ICompilerA
     this.queryParams.update(params)
   }
 
-  getAppParameter (name) {
-    // first look in the URL params then in the local storage
-    const params = this.queryParams.get()
-    const param = params[name] ? params[name] : this.config.get(name)
-    if (param === 'true') return true
-    if (param === 'false') return false
-    return param
+  async getAppParameter (name) {
+    return await this.call('config', 'getAppParameter', name)
   }
 
-  setAppParameter (name, value) {
-    this.config.set(name, value)
+  async setAppParameter (name, value) {
+    await this.call('config', 'setAppParameter', name, value)
   }
 }
 

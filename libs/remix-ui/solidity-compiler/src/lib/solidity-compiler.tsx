@@ -1,5 +1,5 @@
-import React, { useState } from 'react' // eslint-disable-line
-import { SolidityCompilerProps } from './types'
+import React, { useEffect, useState } from 'react' // eslint-disable-line
+import { CompileErrors, ContractsFile, SolidityCompilerProps } from './types'
 import { CompilerContainer } from './compiler-container' // eslint-disable-line
 import { ContractSelection } from './contract-selection' // eslint-disable-line
 import { Toaster } from '@remix-ui/toaster' // eslint-disable-line
@@ -9,12 +9,14 @@ import { Renderer } from '@remix-ui/renderer' // eslint-disable-line
 import './css/style.css'
 
 export const SolidityCompiler = (props: SolidityCompilerProps) => {
-  const { api, api: { currentFile, compileTabLogic, contractsDetails, contractMap, compileErrors, configurationSettings } } = props
+  const { api, api: { currentFile, compileTabLogic, configurationSettings } } = props
   const [state, setState] = useState({
     isHardhatProject: false,
+    isTruffleProject: false,
+    isFoundryProject: false,
+    workspaceName: '',
     currentFile,
-    contractsDetails: {},
-    contractMap: {},
+    configFilePath: 'compiler_config.json',
     loading: false,
     compileTabLogic: null,
     compiler: null,
@@ -31,6 +33,32 @@ export const SolidityCompiler = (props: SolidityCompilerProps) => {
     }
   })
   const [currentVersion, setCurrentVersion] = useState('')
+  const [hideWarnings, setHideWarnings] = useState<boolean>(false)
+  const [compileErrors, setCompileErrors] = useState<Record<string, CompileErrors>>({ [currentFile]: api.compileErrors })
+  const [badgeStatus, setBadgeStatus] = useState<Record<string, { key: string, title?: string, type?: string }>>({})
+  const [contractsFile, setContractsFile] = useState<ContractsFile>({})
+
+  useEffect(() => {
+    (async () => {
+      const hide = await api.getAppParameter('hideWarnings') as boolean || false
+      setHideWarnings(hide)
+    })()
+  }, [])
+
+  useEffect(() => {
+    if (badgeStatus[currentFile]) {
+      api.emit('statusChanged', badgeStatus[currentFile])
+    } else {
+      api.emit('statusChanged', { key: 'none' })
+    }
+  }, [badgeStatus[currentFile], currentFile])
+
+  // Return the file name of a path: ex "browser/ballot.sol" -> "ballot.sol"
+  const getFileName = (path) => {
+    const part = path.split('/')
+
+    return part[part.length - 1]
+  }
 
   api.onCurrentFileChanged = (currentFile: string) => {
     setState(prevState => {
@@ -38,30 +66,59 @@ export const SolidityCompiler = (props: SolidityCompilerProps) => {
     })
   }
 
-  api.onResetResults = () => {
+  api.onSetWorkspace = async (isLocalhost: boolean, workspaceName: string) => {
+    const isHardhat = isLocalhost && await compileTabLogic.isHardhatProject()
+    const isTruffle = isLocalhost && await compileTabLogic.isTruffleProject()
+    const isFoundry = isLocalhost && await compileTabLogic.isFoundryProject()
     setState(prevState => {
-      return { ...prevState, currentFile: '', contractsDetails: {}, contractMap: {} }
+      return { ...prevState, currentFile, isHardhatProject: isHardhat, workspaceName: workspaceName, isTruffleProject:  isTruffle, isFoundryProject: isFoundry }
     })
   }
-
-  api.onSetWorkspace = async (isLocalhost: boolean) => {
-    const isHardhat = isLocalhost && await compileTabLogic.isHardhatProject()
-    setState(prevState => {
-      return { ...prevState, currentFile, isHardhatProject: isHardhat }
-    })
+  
+  api.onFileRemoved = (path: string) => {
+    if (path === state.configFilePath)
+      setState(prevState => {
+        return { ...prevState, configFilePath: '' }
+      })
   }
 
   api.onNoFileSelected = () => {
     setState(prevState => {
       return { ...prevState, currentFile: '' }
     })
+    setCompileErrors({} as Record<string, CompileErrors>)
   }
 
-  api.onCompilationFinished = (contractsDetails: any, contractMap: any) => {
+  api.onCompilationFinished = (compilationDetails: { contractMap: { file: string } | Record<string, any>, contractsDetails: Record<string, any>, target?: string }) => {
+    const { contractMap, contractsDetails, target } = compilationDetails
+    const contractList = contractMap ? Object.keys(contractMap).map((key) => {
+      return {
+        name: key,
+        file: getFileName(contractMap[key].file)
+        }
+    }) : []
+
+    setContractsFile({ ...contractsFile, [target]: { contractList, contractsDetails } })
+    setCompileErrors({ ...compileErrors, [currentFile]: api.compileErrors })
+  }
+
+  api.onFileClosed = (name) => {
+    if (name === currentFile) {
+      setCompileErrors({ ...compileErrors, [currentFile]: {} as CompileErrors })
+      setBadgeStatus({ ...badgeStatus, [currentFile]: { key: 'none' } })
+    }
+  }
+
+  api.statusChanged = (data: { key: string, title?: string, type?: string }) => {
+    setBadgeStatus({ ...badgeStatus, [currentFile]: data })
+  }
+
+  const setConfigFilePath = (path: string) => {
     setState(prevState => {
-      return { ...prevState, contractsDetails, contractMap }
+      return { ...prevState, configFilePath: path }
     })
   }
+
 
   const toast = (message: string) => {
     setState(prevState => {
@@ -111,22 +168,38 @@ export const SolidityCompiler = (props: SolidityCompilerProps) => {
   return (
     <>
       <div id="compileTabView">
-        <CompilerContainer api={api} isHardhatProject={state.isHardhatProject} compileTabLogic={compileTabLogic} tooltip={toast} modal={modal} compiledFileName={currentFile} updateCurrentVersion={updateCurrentVersion} configurationSettings={configurationSettings} />
-        <ContractSelection api={api} contractMap={contractMap} contractsDetails={contractsDetails} modal={modal} />
-        <div className="remixui_errorBlobs p-4" data-id="compiledErrors">
-          <span data-id={`compilationFinishedWith_${currentVersion}`}></span>
-          { compileErrors.error && <Renderer message={compileErrors.error.formattedMessage || compileErrors.error} plugin={api} opt={{ type: compileErrors.error.severity || 'error', errorType: compileErrors.error.type }} /> }
-          { compileErrors.error && (compileErrors.error.mode === 'panic') && modal('Error', panicMessage(compileErrors.error.formattedMessage), 'Close', null) }
-          { compileErrors.errors && compileErrors.errors.length && compileErrors.errors.map((err, index) => {
-            if (api.getAppParameter('hideWarnings')) {
-              if (err.severity !== 'warning') {
+        <CompilerContainer
+          api={api}
+          isHardhatProject={state.isHardhatProject}
+          workspaceName={state.workspaceName}
+          isTruffleProject={state.isTruffleProject}
+          isFoundryProject={state.isFoundryProject}
+          compileTabLogic={compileTabLogic}
+          tooltip={toast}
+          modal={modal}
+          compiledFileName={currentFile}
+          updateCurrentVersion={updateCurrentVersion}
+          configurationSettings={configurationSettings}
+          configFilePath={state.configFilePath}
+          setConfigFilePath={setConfigFilePath}
+        />
+        { contractsFile[currentFile] && contractsFile[currentFile].contractsDetails && <ContractSelection api={api} compiledFileName={currentFile} contractsDetails={contractsFile[currentFile].contractsDetails} contractList={contractsFile[currentFile].contractList} modal={modal} /> }
+        { compileErrors[currentFile] &&
+          <div className="remixui_errorBlobs p-4" data-id="compiledErrors">
+            <span data-id={`compilationFinishedWith_${currentVersion}`}></span>
+            { compileErrors[currentFile].error && <Renderer message={compileErrors[currentFile].error.formattedMessage || compileErrors[currentFile].error} plugin={api} opt={{ type: compileErrors[currentFile].error.severity || 'error', errorType: compileErrors[currentFile].error.type }} /> }
+            { compileErrors[currentFile].error && (compileErrors[currentFile].error.mode === 'panic') && modal('Error', panicMessage(compileErrors[currentFile].error.formattedMessage), 'Close', null) }
+            { compileErrors[currentFile].errors && compileErrors[currentFile].errors.length && compileErrors[currentFile].errors.map((err, index) => {
+              if (hideWarnings) {
+                if (err.severity !== 'warning') {
+                  return <Renderer key={index} message={err.formattedMessage} plugin={api} opt={{ type: err.severity, errorType: err.type }} />
+                }
+              } else {
                 return <Renderer key={index} message={err.formattedMessage} plugin={api} opt={{ type: err.severity, errorType: err.type }} />
               }
-            } else {
-              return <Renderer key={index} message={err.formattedMessage} plugin={api} opt={{ type: err.severity, errorType: err.type }} />
-            }
-          }) }
-        </div>
+            }) }
+          </div>
+        }
       </div>
       <Toaster message={state.toasterMsg} />
       <ModalDialog

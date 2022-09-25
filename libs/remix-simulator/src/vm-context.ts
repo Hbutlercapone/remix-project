@@ -2,11 +2,15 @@
 'use strict'
 import Web3 from 'web3'
 import { rlp, keccak, bufferToHex } from 'ethereumjs-util'
-import { vm as remixLibVm, execution } from '@remix-project/remix-lib'
+import { execution } from '@remix-project/remix-lib'
+const { LogsManager } = execution
+import { VmProxy } from './VmProxy'
 import VM from '@ethereumjs/vm'
 import Common from '@ethereumjs/common'
 import StateManager from '@ethereumjs/vm/dist/state/stateManager'
 import { StorageDump } from '@ethereumjs/vm/dist/state/interface'
+import { Block } from '@ethereumjs/block'
+import { Transaction } from '@ethereumjs/tx'
 
 /*
   extend vm state manager and instanciate VM
@@ -24,31 +28,27 @@ class StateManagerCommonStorageDump extends StateManager {
     return super.putContractStorage(address, key, value)
   }
 
-  async dumpStorage (address) {
-    let trie
-    try {
-      trie = await this._getStorageTrie(address)
-    } catch (e) {
-      console.log(e)
-      throw e
-    }
-    return new Promise<StorageDump>((resolve, reject) => {
-      try {
-        const storage = {}
-        const stream = trie.createReadStream()
-        stream.on('data', (val) => {
-          const value = rlp.decode(val.value)
-          storage['0x' + val.key.toString('hex')] = {
-            key: this.keyHashes[val.key.toString('hex')],
-            value: '0x' + value.toString('hex')
-          }
+  async dumpStorage (address): Promise<StorageDump> {
+    return new Promise((resolve, reject) => {
+      this._getStorageTrie(address)
+        .then((trie) => {
+          const storage = {}
+          const stream = trie.createReadStream()
+
+          stream.on('data', (val) => {
+            const value = rlp.decode(val.value)
+            storage['0x' + val.key.toString('hex')] = {
+              key: this.keyHashes[val.key.toString('hex')],
+              value: '0x' + value.toString('hex')
+            }
+          })
+          stream.on('end', () => {
+            resolve(storage)
+          })
         })
-        stream.on('end', function () {
-          resolve(storage)
+        .catch((e) => {
+          reject(e)
         })
-      } catch (e) {
-        reject(e)
-      }
     })
   }
 
@@ -60,24 +60,30 @@ class StateManagerCommonStorageDump extends StateManager {
   }
 
   async setStateRoot (stateRoot) {
-    await this._cache.flush()
-
-    if (stateRoot === this._trie.EMPTY_TRIE_ROOT) {
-      this._trie.root = stateRoot
-      this._cache.clear()
-      this._storageTries = {}
-      return
+    if (this._checkpointCount !== 0) {
+      throw new Error('Cannot set state root with uncommitted checkpoints')
     }
 
-    const hasRoot = await this._trie.checkRoot(stateRoot)
-    if (!hasRoot) {
-      throw new Error('State trie does not contain state root')
+    await this._cache.flush()
+
+    if (!stateRoot.equals(this._trie.EMPTY_TRIE_ROOT)) {
+      const hasRoot = await this._trie.checkRoot(stateRoot)
+      if (!hasRoot) {
+        throw new Error('State trie does not contain state root')
+      }
     }
 
     this._trie.root = stateRoot
     this._cache.clear()
     this._storageTries = {}
   }
+}
+
+export type CurrentVm = {
+  vm: VM,
+  web3vm: VmProxy,
+  stateManager: StateManagerCommonStorageDump,
+  common: Common
 }
 
 /*
@@ -87,14 +93,14 @@ export class VMContext {
   currentFork: string
   blockGasLimitDefault: number
   blockGasLimit: number
-  customNetWorks
-  blocks
-  latestBlockNumber
-  txs
-  currentVm
-  web3vm
-  logsManager
-  exeResults
+  blocks: Record<string, Block>
+  latestBlockNumber: string
+  blockByTxHash: Record<string, Block>
+  txByHash: Record<string, Transaction>
+  currentVm: CurrentVm
+  web3vm: VmProxy
+  logsManager: any // LogsManager 
+  exeResults: Record<string, Transaction>
 
   constructor (fork?) {
     this.blockGasLimitDefault = 4300000
@@ -102,10 +108,11 @@ export class VMContext {
     this.currentFork = fork || 'london'
     this.currentVm = this.createVm(this.currentFork)
     this.blocks = {}
-    this.latestBlockNumber = 0
-    this.txs = {}
+    this.latestBlockNumber = "0x0"
+    this.blockByTxHash = {}
+    this.txByHash = {}
     this.exeResults = {}
-    this.logsManager = new execution.LogsManager()
+    this.logsManager = new LogsManager()
   }
 
   createVm (hardfork) {
@@ -118,7 +125,9 @@ export class VMContext {
       allowUnlimitedContractSize: true
     })
 
-    const web3vm = new remixLibVm.Web3VMProvider()
+    // VmProxy and VMContext are very intricated.
+    // VmProxy is used to track the EVM execution (to listen on opcode execution, in order for instance to generate the VM trace)
+    const web3vm = new VmProxy(this)
     web3vm.setVM(vm)
     return { vm, web3vm, stateManager, common }
   }
@@ -143,7 +152,7 @@ export class VMContext {
     return this.currentVm
   }
 
-  addBlock (block) {
+  addBlock (block: Block) {
     let blockNumber = '0x' + block.header.number.toString('hex')
     if (blockNumber === '0x') {
       blockNumber = '0x0'
@@ -156,8 +165,9 @@ export class VMContext {
     this.logsManager.checkBlock(blockNumber, block, this.web3())
   }
 
-  trackTx (tx, block) {
-    this.txs[tx] = block
+  trackTx (txHash, block, tx) {
+    this.blockByTxHash[txHash] = block
+    this.txByHash[txHash] = tx
   }
 
   trackExecResult (tx, execReult) {

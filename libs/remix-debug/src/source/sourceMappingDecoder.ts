@@ -108,7 +108,7 @@ function sourceLocationFromAstNode (astNode) {
  * @param {Object} ast - ast given by the compilation result
  */
 export function findNodeAtInstructionIndex (astNodeType, instIndex, sourceMap, ast) {
-  const sourceLocation = this.atIndex(instIndex, sourceMap)
+  const sourceLocation = atIndex(instIndex, sourceMap)
   return findNodeAtSourceLocation(astNodeType, sourceLocation, ast)
 }
 
@@ -142,7 +142,7 @@ export function nodesAtPosition (astNodeType, position, ast) {
   const astWalker = new AstWalker()
   const found = []
   const callback = function (node) {
-    var nodeLocation = sourceLocationFromAstNode(node)
+    const nodeLocation = sourceLocationFromAstNode(node)
     if (!nodeLocation) {
       return
     }

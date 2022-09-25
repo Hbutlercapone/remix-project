@@ -1,19 +1,20 @@
 {
   "name": "@remix-project/remixd",
-  "version": "0.5.2",
+  "version": "0.6.6",
   "description": "remix server: allow accessing file system from remix.ethereum.org and start a dev environment (see help section)",
   "main": "index.js",
   "types": "./index.d.ts",
   "bin": {
-    "remixd": "./bin/remixd.js"
+    "remixd": "./src/bin/remixd.js"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\"",
-    "start": "./bin/remixd.js",
+    "start": "./src/bin/remixd.js",
     "npip": "npip",
-    "lint": "eslint ./src ./bin --ext .ts",
-    "build": "tsc -p ./ && chmod +x ./bin/remixd.js",
-    "dev": "nodemon"
+    "lint": "eslint ./src --ext .ts",
+    "build": "tsc -p ./ && chmod +x ./src/bin/remixd.js",
+    "dev": "nodemon",
+    "postinstall": "node src/scripts/installSlither.js"
   },
   "publishConfig": {
     "access": "public"

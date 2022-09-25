@@ -12,19 +12,20 @@ import * as program from 'commander'
 
 async function warnLatestVersion () {
   const latest = await latestVersion('@remix-project/remixd')
-  const pjson = require('../package.json')
+  const pjson = require('../../package.json') // eslint-disable-line
   if (semver.eq(latest, pjson.version)) {
     console.log('\x1b[32m%s\x1b[0m', `[INFO] you are using the latest version ${latest}`)
   } else if (semver.gt(latest, pjson.version)) {
     console.log('\x1b[33m%s\x1b[0m', `[WARN] latest version of remixd is ${latest}, you are using ${pjson.version}`)
     console.log('\x1b[33m%s\x1b[0m', '[WARN] please update using the following command:')
-    console.log('\x1b[33m%s\x1b[0m', '[WARN] npm install @remix-project/remixd -g')
+    console.log('\x1b[33m%s\x1b[0m', '[WARN] yarn global add @remix-project/remixd')
   }
 }
 
 const services = {
   git: (readOnly: boolean) => new servicesList.GitClient(readOnly),
   hardhat: (readOnly: boolean) => new servicesList.HardhatClient(readOnly),
+  truffle: (readOnly: boolean) => new servicesList.TruffleClient(readOnly),
   slither: (readOnly: boolean) => new servicesList.SlitherClient(readOnly),
   folder: (readOnly: boolean) => new servicesList.Sharedfolder(readOnly)
 }
@@ -34,11 +35,12 @@ const ports = {
   git: 65521,
   hardhat: 65522,
   slither: 65523,
+  truffle: 65524,
   folder: 65520
 }
 
-const killCallBack: Array<Function> = []
-function startService<S extends 'git' | 'hardhat' | 'slither' | 'folder'> (service: S, callback: (ws: WS, sharedFolderClient: servicesList.Sharedfolder, error?:Error) => void) {
+const killCallBack: Array<any> = [] // any is function
+function startService<S extends 'git' | 'hardhat' | 'truffle' | 'slither' | 'folder'> (service: S, callback: (ws: WS, sharedFolderClient: servicesList.Sharedfolder, error?:Error) => void) {
   const socket = new WebSocket(ports[service], { remixIdeUrl: program.remixIde }, () => services[service](program.readOnly || false))
   socket.start(callback)
   killCallBack.push(socket.close.bind(socket))
@@ -54,21 +56,26 @@ function errorHandler (error: any, service: string) {
 }
 
 (async () => {
-  const { version } = require('../package.json')
+  const { version } = require('../../package.json') // eslint-disable-line
   program.version(version, '-v, --version')
 
   program
-    .usage('-s <shared folder>')
-    .description('Provide a two-way connection between the local computer and Remix IDE')
-    .option('-u, --remix-ide  <url>', 'URL of remix instance allowed to connect to this web sockect connection')
-    .option('-s, --shared-folder <path>', 'Folder to share with Remix IDE')
+    .description('Establish a two-way websocket connection between the local computer and Remix IDE for a folder')
+    .option('-u, --remix-ide  <url>', 'URL of remix instance allowed to connect')
+    .option('-s, --shared-folder <path>', 'Folder to share with Remix IDE (Default: CWD)')
+    .option('-i, --install <name>', 'Module name to install locally (Supported: ["slither"])')
     .option('-r, --read-only', 'Treat shared folder as read-only (experimental)')
     .on('--help', function () {
-      console.log('\nExample:\n\n    remixd -s ./ -u http://localhost:8080')
+      console.log('\nExample:\n\n    remixd -s ./shared_project -u http://localhost:8080')
     }).parse(process.argv)
   // eslint-disable-next-line
 
   await warnLatestVersion()
+
+  if(program.install && !program.readOnly) {
+    if (program.install.toLowerCase() === 'slither') require('./../scripts/installSlither')
+    process.exit(0)
+  }
 
   if (!program.remixIde) {
     console.log('\x1b[33m%s\x1b[0m', '[WARN] You can only connect to remixd from one of the supported origins.')
@@ -82,6 +89,8 @@ function errorHandler (error: any, service: string) {
     }
     console.log('\x1b[33m%s\x1b[0m', '[WARN] You may now only use IDE at ' + program.remixIde + ' to connect to that instance')
   }
+
+  if (!program.sharedFolder) program.sharedFolder = process.cwd() // if no specified, use the current folder
 
   if (program.sharedFolder && existsSync(absolutePath('./', program.sharedFolder))) {
     console.log('\x1b[33m%s\x1b[0m', '[WARN] Any application that runs on your computer can potentially read from and write to all files in the directory.')
@@ -100,9 +109,21 @@ function errorHandler (error: any, service: string) {
         sharedFolderClient.setWebSocket(ws)
         sharedFolderClient.sharedFolder(program.sharedFolder)
       })
+      // Run truffle service if a truffle project is shared as folder
+      const truffleConfigFilePath = absolutePath('./', program.sharedFolder) + '/truffle-config.js'
+      if (existsSync(truffleConfigFilePath)) {
+        startService('truffle', (ws: WS, sharedFolderClient: servicesList.Sharedfolder, error: any) => {
+          if (error) {
+            errorHandler(error, 'truffle')
+            return false
+          }
+          sharedFolderClient.setWebSocket(ws)
+          sharedFolderClient.sharedFolder(program.sharedFolder)
+        })
+      }
       // Run hardhat service if a hardhat project is shared as folder
-      const hardhatConfigFilePath = absolutePath('./', program.sharedFolder) + '/hardhat.config.js'
-      const isHardhatProject = existsSync(hardhatConfigFilePath)
+      const hardhatConfigFilePath = absolutePath('./', program.sharedFolder)
+      const isHardhatProject = existsSync(hardhatConfigFilePath  + '/hardhat.config.js') || existsSync(hardhatConfigFilePath  + '/hardhat.config.ts')
       if (isHardhatProject) {
         startService('hardhat', (ws: WS, sharedFolderClient: servicesList.Sharedfolder, error: Error) => {
           if (error) {
@@ -145,22 +166,23 @@ function errorHandler (error: any, service: string) {
   async function isValidOrigin (origin: string): Promise<any> {
     if (!origin) return false
     const domain = getDomain(origin)
-    const gistUrl = 'https://gist.githubusercontent.com/EthereumRemix/091ccc57986452bbb33f57abfb13d173/raw/3367e019335746b73288e3710af2922d4c8ef5a3/origins.json'
+    const gistUrl = 'https://gist.githubusercontent.com/EthereumRemix/091ccc57986452bbb33f57abfb13d173/raw/59cedab38ae94cc72b68854b3706f11819e4a0af/origins.json'
 
     try {
-      const { data } = await Axios.get(gistUrl)
+      const { data } = (await Axios.get(gistUrl)) as { data: any }
 
       try {
-        await writeJSON(path.resolve(path.join(__dirname, '..', 'origins.json')), { data })
+        await writeJSON(path.resolve(path.join(__dirname, '../..', 'origins.json')), { data })
       } catch (e) {
         console.error(e)
       }
 
-      return data.includes(origin) ? data.includes(origin) : data.includes(domain)
+      const dataArray:string[] = data
+      return dataArray.includes(origin) ? dataArray.includes(origin) : dataArray.includes(domain)
     } catch (e) {
       try {
         // eslint-disable-next-line
-        const origins = require('../origins.json')
+        const origins = require('../../origins.json')
         const { data } = origins
 
         return data.includes(origin) ? data.includes(origin) : data.includes(domain)

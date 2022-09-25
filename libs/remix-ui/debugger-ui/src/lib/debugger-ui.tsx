@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react' // eslint-disable-line
+import React, { useState, useEffect, useRef } from 'react' // eslint-disable-line
 import TxBrowser from './tx-browser/tx-browser' // eslint-disable-line
 import StepManager from './step-manager/step-manager' // eslint-disable-line
 import VmDebugger from './vm-debugger/vm-debugger' // eslint-disable-line
@@ -6,9 +6,9 @@ import VmDebuggerHead from './vm-debugger/vm-debugger-head' // eslint-disable-li
 import { TransactionDebugger as Debugger } from '@remix-project/remix-debug' // eslint-disable-line
 import { DebuggerUIProps } from './idebugger-api' // eslint-disable-line
 import { Toaster } from '@remix-ui/toaster' // eslint-disable-line
+import { isValidHash } from '@remix-ui/helper'
 /* eslint-disable-next-line */
 import './debugger-ui.css'
-const helper = require('../../../../../apps/remix-ide/src/lib/helper')
 const _paq = (window as any)._paq = (window as any)._paq || []
 
 export const DebuggerUI = (props: DebuggerUIProps) => {
@@ -32,8 +32,30 @@ export const DebuggerUI = (props: DebuggerUIProps) => {
     toastMessage: '',
     validationError: '',
     txNumberIsEmpty: true,
-    isLocalNodeUsed: false
+    isLocalNodeUsed: false,
+    sourceLocationStatus: ''
   })
+
+  const panelsRef = useRef<HTMLDivElement>(null)
+  const debuggerTopRef = useRef(null)
+
+  const handleResize = () => {
+    if (panelsRef.current && debuggerTopRef.current) {
+      panelsRef.current.style.height = (window.innerHeight - debuggerTopRef.current.clientHeight) - debuggerTopRef.current.offsetTop - 7 +'px'
+    }
+  }
+
+  useEffect(() => {
+    handleResize()
+  }, [])
+
+  useEffect(() => {
+    window.addEventListener('resize', handleResize)
+    // TODO: not a good way to wait on the ref doms element to be rendered of course
+    setTimeout(() =>
+      handleResize(), 2000)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [state.debugging, state.isActive])
 
   useEffect(() => {
     return unLoad()
@@ -86,8 +108,26 @@ export const DebuggerUI = (props: DebuggerUIProps) => {
       })
     })
 
+    debuggerInstance.event.register('locatingBreakpoint', async (isActive) => {
+      setState(prevState => {
+        return { ...prevState, sourceLocationStatus: 'Locating breakpoint, this might take a while...' }
+      })
+    })
+
+    debuggerInstance.event.register('noBreakpointHit', async (isActive) => {
+      setState(prevState => {
+        return { ...prevState, sourceLocationStatus: '' }
+      })
+    })
+
     debuggerInstance.event.register('newSourceLocation', async (lineColumnPos, rawLocation, generatedSources, address) => {
-      if (!lineColumnPos) return
+      if (!lineColumnPos) {        
+        await debuggerModule.discardHighlight()
+        setState(prevState => {
+          return { ...prevState, sourceLocationStatus: 'Source location not available, neither in Sourcify nor in Etherscan. Please make sure the Etherscan api key is provided in the settings.' }
+        })
+        return
+      }
       const contracts = await debuggerModule.fetchContractAndCompile(
         address || currentReceipt.contractAddress || currentReceipt.to,
         currentReceipt)
@@ -113,6 +153,9 @@ export const DebuggerUI = (props: DebuggerUIProps) => {
           }
         }
         if (path) {
+          setState(prevState => {
+            return { ...prevState, sourceLocationStatus: '' }
+          })
           await debuggerModule.discardHighlight()
           await debuggerModule.highlight(lineColumnPos, path)
         }
@@ -138,9 +181,16 @@ export const DebuggerUI = (props: DebuggerUIProps) => {
 
   const unloadRequested = (blockNumber, txIndex, tx) => {
     unLoad()
+    setState(prevState => {
+      return {
+        ...prevState,
+        sourceLocationStatus: ''
+      }
+    })
   }
 
   const unLoad = () => {
+    debuggerModule.onStopDebugging()
     if (state.debugger) state.debugger.unload()
     setState(prevState => {
       return {
@@ -168,10 +218,11 @@ export const DebuggerUI = (props: DebuggerUIProps) => {
     setState(prevState => {
       return {
         ...prevState,
-        txNumber: txNumber
+        txNumber: txNumber,
+        sourceLocationStatus: ''
       }
     })
-    if (!helper.isValidHash(txNumber)) {
+    if (!isValidHash(txNumber)) {
       setState(prevState => {
         return {
           ...prevState,
@@ -230,33 +281,37 @@ export const DebuggerUI = (props: DebuggerUIProps) => {
       debugWithGeneratedSources: state.opt.debugWithGeneratedSources
     })
 
-    try {
-      await debuggerInstance.debug(blockNumber, txNumber, tx, () => {
-        listenToEvents(debuggerInstance, currentReceipt)
+    setTimeout(async() => {
+      debuggerModule.onStartDebugging()
+      try {
+        await debuggerInstance.debug(blockNumber, txNumber, tx, () => {
+          listenToEvents(debuggerInstance, currentReceipt)
+          setState(prevState => {
+            return {
+              ...prevState,
+              blockNumber,
+              txNumber,
+              debugging: true,
+              currentReceipt,
+              currentBlock,
+              currentTransaction,
+              debugger: debuggerInstance,
+              toastMessage: `debugging ${txNumber}`,
+              validationError: ''
+            }
+          })
+        })
+      } catch (error) {
+        unLoad()
         setState(prevState => {
           return {
             ...prevState,
-            blockNumber,
-            txNumber,
-            debugging: true,
-            currentReceipt,
-            currentBlock,
-            currentTransaction,
-            debugger: debuggerInstance,
-            toastMessage: `debugging ${txNumber}`,
-            validationError: ''
+            validationError: error.message || error
           }
         })
-      })
-    } catch (error) {
-      unLoad()
-      setState(prevState => {
-        return {
-          ...prevState,
-          validationError: error.message || error
-        }
-      })
-    }
+      }
+    }, 300)
+    handleResize()
   }
 
   const debug = (txHash, web3?) => {
@@ -264,7 +319,8 @@ export const DebuggerUI = (props: DebuggerUIProps) => {
       return {
         ...prevState,
         validationError: '',
-        txNumber: txHash
+        txNumber: txHash,
+        sourceLocationStatus: ''
       }
     })
     startDebugging(null, txHash, null, web3)
@@ -283,25 +339,26 @@ export const DebuggerUI = (props: DebuggerUIProps) => {
     traceLength: state.debugger && state.debugger.step_manager ? state.debugger.step_manager.traceLength : null,
     registerEvent: state.debugger && state.debugger.step_manager ? state.debugger.step_manager.event.register.bind(state.debugger.step_manager.event) : null
   }
+
   const vmDebugger = {
     registerEvent: state.debugger && state.debugger.vmDebuggerLogic ? state.debugger.vmDebuggerLogic.event.register.bind(state.debugger.vmDebuggerLogic.event) : null,
     triggerEvent: state.debugger && state.debugger.vmDebuggerLogic ? state.debugger.vmDebuggerLogic.event.trigger.bind(state.debugger.vmDebuggerLogic.event) : null
   }
+
   return (
     <div>
       <Toaster message={state.toastMessage} />
-      <div className="px-2">
+      <div className="px-2" ref={debuggerTopRef}>
         <div>
-          <p className="my-2 debuggerLabel">Debugger Configuration</p>
           <div className="mt-2 mb-2 debuggerConfig custom-control custom-checkbox">
             <input className="custom-control-input" id="debugGeneratedSourcesInput" onChange={({ target: { checked } }) => {
               setState(prevState => {
                 return { ...prevState, opt: { ...prevState.opt, debugWithGeneratedSources: checked } }
               })
             }} type="checkbox" title="Debug with generated sources" />
-            <label data-id="debugGeneratedSourcesLabel" className="form-check-label custom-control-label" htmlFor="debugGeneratedSourcesInput">Use generated sources (from Solidity v0.7.2)</label>
+            <label data-id="debugGeneratedSourcesLabel" className="form-check-label custom-control-label" htmlFor="debugGeneratedSourcesInput">Use generated sources (Solidity {'>='} v0.7.2)</label>
           </div>
-          { state.isLocalNodeUsed && <div className="mt-2 mb-2 debuggerConfig custom-control custom-checkbox">
+          { state.isLocalNodeUsed && <div className="mb-2 debuggerConfig custom-control custom-checkbox">
             <input className="custom-control-input" id="debugWithLocalNodeInput" onChange={({ target: { checked } }) => {
               setState(prevState => {
                 return { ...prevState, opt: { ...prevState.opt, debugWithLocalNode: checked } }
@@ -313,10 +370,22 @@ export const DebuggerUI = (props: DebuggerUIProps) => {
           { state.validationError && <span className="w-100 py-1 text-danger validationError">{state.validationError}</span> }
         </div>
         <TxBrowser requestDebug={ requestDebug } unloadRequested={ unloadRequested } updateTxNumberFlag={ updateTxNumberFlag } transactionNumber={ state.txNumber } debugging={ state.debugging } />
+        { state.debugging && state.sourceLocationStatus && <div className="text-warning"><i className="fas fa-exclamation-triangle" aria-hidden="true"></i> {state.sourceLocationStatus}</div> }
+        { !state.debugging && 
+        <div>
+          <i className="fas fa-info-triangle" aria-hidden="true"></i>
+          <span>
+            When Debugging with a transaction hash, 
+            if the contract is verified, Remix will try to fetch the source code from Sourcify or Etherscan. Put in your Etherscan API key in the Remix settings.
+            For supported networks, please see: <a href="https://sourcify.dev" target="__blank" >https://sourcify.dev</a> & <a href="https://sourcify.dev" target="__blank">https://etherscan.io/contractsVerified</a>
+          </span>
+        </div> }
         { state.debugging && <StepManager stepManager={ stepManager } /> }
-        { state.debugging && <VmDebuggerHead vmDebugger={ vmDebugger } /> }
       </div>
-      { state.debugging && <VmDebugger vmDebugger={ vmDebugger } currentBlock={ state.currentBlock } currentReceipt={ state.currentReceipt } currentTransaction={ state.currentTransaction } /> }
+      <div className="debuggerPanels" ref={panelsRef}>
+        { state.debugging && <VmDebuggerHead vmDebugger={ vmDebugger } /> }
+        { state.debugging && <VmDebugger vmDebugger={ vmDebugger } currentBlock={ state.currentBlock } currentReceipt={ state.currentReceipt } currentTransaction={ state.currentTransaction } /> }
+      </div>
     </div>
   )
 }

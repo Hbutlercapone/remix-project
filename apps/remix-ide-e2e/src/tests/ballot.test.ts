@@ -25,7 +25,7 @@ module.exports = {
       .setValue('input[placeholder="bytes32[] proposalNames"]', '["0x48656c6c6f20576f726c64210000000000000000000000000000000000000000"]')
       .click('*[data-id="Deploy - transact (not payable)"]')
       .waitForElementPresent('*[data-id="universalDappUiContractActionWrapper"]', 60000)
-      .click('*[data-id="universalDappUiTitleExpander"]')
+      .clickInstance(0)
       .clickFunction('delegate - transact (not payable)', { types: 'address to', values: '"0x4b0897b0513fdc7c541b6d9d7e929c4e5364d2db"' })
       .testFunction('last',
         {
@@ -70,7 +70,7 @@ module.exports = {
       .addAtAddressInstance('0x692a70D2e424a56D2C6C27aA97D1a86395877b3A', true, true)
       .pause(500)
       .waitForElementPresent('*[data-id="universalDappUiContractActionWrapper"]', 60000)
-      .click('*[data-id="universalDappUiTitleExpander"]')
+      .clickInstance(0)
       .clickFunction('delegate - transact (not payable)', { types: 'address to', values: '"0x4b0897b0513fdc7c541b6d9d7e929c4e5364d2db"' })
       .testFunction('last',
         {
@@ -81,11 +81,21 @@ module.exports = {
 
   'Deploy and use Ballot using external web3': function (browser: NightwatchBrowser) {
     browser
-      .click('*[data-id="settingsWeb3Mode"]')
-      .modalFooterOKClick()
-      .clickLaunchIcon('solidity')
-      .testContracts('Untitled.sol', sources[0]['Untitled.sol'], ['Ballot'])
+      .openFile('Untitled.sol')
       .clickLaunchIcon('udapp')
+      .switchEnvironment('External Http Provider')
+      .waitForElementPresent('[data-id="basic-http-provider-modal-footer-ok-react"]')
+      .execute(function () {
+        const modal = document.querySelector('[data-id="basic-http-provider-modal-footer-ok-react"]') as any
+
+        modal.click()
+      })
+      .pause(5000)
+      .waitForElementContainsText('#selectExEnvOptions button', 'External Http Provider')
+      .clickLaunchIcon('solidity')
+      .clickLaunchIcon('udapp')
+      .pause(2000)
+      .clearValue('input[placeholder="bytes32[] proposalNames"]')
       .setValue('input[placeholder="bytes32[] proposalNames"]', '["0x48656c6c6f20576f726c64210000000000000000000000000000000000000000"]')
       .click('*[data-id="Deploy - transact (not payable)"]')
       .clickInstance(0)
@@ -106,6 +116,41 @@ module.exports = {
         })
       // Test in Udapp UI , treeViewDiv0 shows returned value on method click
       .assert.containsText('*[data-id="treeViewDiv0"]', 'bytes32: winnerName_ 0x48656c6c6f20576f726c64210000000000000000000000000000000000000000')
+  },
+
+  'Compile Ballot using config file': function (browser: NightwatchBrowser) {
+    browser
+      .addFile('cf.json', {content: configFile})
+      .clickLaunchIcon('solidity')
+      .waitForElementVisible('*[data-id="scConfigExpander"]')
+      .click('*[data-id="scConfigExpander"]')
+      .waitForElementVisible('*[data-id="scFileConfiguration"]', 10000)
+      .click('*[data-id="scFileConfiguration"]')
+      .waitForElementVisible('*[data-id="scConfigChangeFilePath"]', 10000)
+      .click('*[data-id="scConfigChangeFilePath"]')
+      .waitForElementVisible('*[data-id="scConfigFilePathInput"]', 10000)
+      .clearValue('*[data-id="scConfigFilePathInput"]')
+      .setValue('*[data-id="scConfigFilePathInput"]', 'cf.json')
+      .sendKeys('*[data-id$="scConfigFilePathInput"]', browser.Keys.ENTER)
+      .openFile('Untitled.sol')
+      .verifyContracts(['Ballot'], {wait: 2000, runs: '300'})
+  },
+
+  'Compile and deploy sample yul file': function (browser: NightwatchBrowser) {
+    browser
+      .addFile('sample.yul', {content: yulSample})
+      .clickLaunchIcon('solidity')
+      .waitForElementVisible('*[data-id="scConfigExpander"]')
+      .click('*[data-id="scManualConfiguration"]')
+      .waitForElementVisible('select[id="compilierLanguageSelector"]', 10000)
+      .click('select[id="compilierLanguageSelector"]')
+      .click('select[id="compilierLanguageSelector"] option[value=Yul]')
+      .waitForElementContainsText('[data-id="compiledContracts"]', 'Contract', 60000)
+      .clickLaunchIcon('udapp')
+      .click('*[data-id="Deploy - transact (not payable)"]')
+      .waitForElementPresent('*[data-id="universalDappUiContractActionWrapper"]', 60000)
+      .journalLastChildIncludes('Contract.(constructor)')
+      .journalLastChildIncludes('data: 0x602...0565b')
       .end()
   }
 }
@@ -341,3 +386,37 @@ const ballotABI = `[
   "type": "function"
 }
 ]`
+
+const configFile = `
+{
+	"language": "Solidity",
+	"settings": {
+		"optimizer": {
+			"enabled": true,
+			"runs": 300
+		},
+		"outputSelection": {
+			"*": {
+			"": ["ast"],
+      "*": ["abi", "metadata", "devdoc", "userdoc", "storageLayout", "evm.legacyAssembly", "evm.bytecode", "evm.deployedBytecode", "evm.methodIdentifiers", "evm.gasEstimates", "evm.assembly"]
+			}
+		},
+		"evmVersion": "byzantium"
+	}
+}
+`
+
+const yulSample = `
+object "Contract" {
+  code {
+      function power(base, exponent) -> result
+      {
+          result := 1
+          for { let i := 0 } lt(i, exponent) { i := add(i, 1) }
+          {
+              result := mul(result, base)
+          }
+      }
+  }
+}
+`

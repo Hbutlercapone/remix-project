@@ -85,7 +85,7 @@ export function findLowerBound (target, array) {
   return largest array[i] such that array[i] <= target; return null if array[0] > target || array is empty
 */
 export function findLowerBoundValue (target, array) {
-  const index = this.findLowerBound(target, array)
+  const index = findLowerBound(target, array)
   return index >= 0 ? array[index] : null
 }
 
@@ -99,7 +99,7 @@ export function findClosestIndex (target, array): number {
   if (array.length === 0) {
     return -1
   }
-  const index = this.findLowerBound(target, array)
+  const index = findLowerBound(target, array)
   if (index < 0) {
     return 0
   } else if (index >= array.length - 1) {
@@ -184,15 +184,36 @@ export function cborEncodedValueExtraction () {
   return /64697066735822([0-9a-f]{68})64736f6c6343([0-9a-f]{6})0033$/
 }
 
+/**
+  * return a regex which extract the input parameters from the bytecode
+  *
+  * @return {RegEx}
+  */
+export function inputParametersExtraction () {
+  return /64697066735822[0-9a-f]{68}64736f6c6343[0-9a-f]{6}0033(.*)$/
+}
+
 export function extractcborMetadata (value) {
-  return value.replace(this.cborEncodedValueExtraction(), '')
+  return value.replace(cborEncodedValueExtraction(), '')
 }
 
 export function extractSwarmHash (value) {
-  value = value.replace(this.swarmHashExtraction(), '')
-  value = value.replace(this.swarmHashExtractionPOC31(), '')
-  value = value.replace(this.swarmHashExtractionPOC32(), '')
+  value = value.replace(swarmHashExtraction(), '')
+  value = value.replace(swarmHashExtractionPOC31(), '')
+  value = value.replace(swarmHashExtractionPOC32(), '')
   return value
+}
+
+export function extractinputParameters (value) {
+  return value.replace(inputParametersExtraction(), '')
+}
+
+export function getinputParameters (value) {
+  const regex = value.match(inputParametersExtraction())
+  if (regex && regex[1]) {
+    return regex[1]
+  } else
+      return ''
 }
 
 /**
@@ -218,14 +239,16 @@ export function compareByteCode (code1, code2) {
     code2 = replaceLibReference(code2, pos)
     code1 = replaceLibReference(code1, pos)
   }
-  code1 = this.extractSwarmHash(code1)
-  code1 = this.extractcborMetadata(code1)
-  code2 = this.extractSwarmHash(code2)
-  code2 = this.extractcborMetadata(code2)
+  code1 = extractinputParameters(code1)  
+  code1 = extractSwarmHash(code1)
+  code1 = extractcborMetadata(code1)
+  code2 = extractinputParameters(code2)
+  code2 = extractSwarmHash(code2)
+  code2 = extractcborMetadata(code2)
 
   if (code1 && code2) {
     const compare = stringSimilarity.compareTwoStrings(code1, code2)
-    return compare > 0.93
+    return compare == 1
   }
 
   return false

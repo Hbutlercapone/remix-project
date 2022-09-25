@@ -20,7 +20,8 @@ export default class WebSocket {
       65520: 'remixd',
       65521: 'git',
       65522: 'hardhat',
-      65523: 'slither'
+      65523: 'slither',
+      65524: 'truffle'
     }
 
     this.server.on('error', (error: Error) => {
@@ -66,7 +67,7 @@ function originIsAllowed (origin: string, self: WebSocket): boolean {
   } else {
     try {
       // eslint-disable-next-line
-      const origins = require('./origins.json')
+      const origins = require('../origins.json')
       const domain = getDomain(origin)
       const { data } = origins
 

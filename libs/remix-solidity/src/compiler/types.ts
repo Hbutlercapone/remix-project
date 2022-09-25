@@ -123,7 +123,7 @@ export interface CompilerInput {
     outputSelection?: {
         '*': {
           '': [ 'ast' ],
-          '*': [ 'abi', 'metadata', 'devdoc', 'userdoc', 'evm.legacyAssembly', 'evm.bytecode', 'evm.deployedBytecode', 'evm.methodIdentifiers', 'evm.gasEstimates', 'evm.assembly' ]
+          '*': [ 'abi', 'metadata', 'devdoc', 'userdoc', 'storageLayout', 'evm.legacyAssembly', 'evm.bytecode', 'evm.deployedBytecode', 'evm.methodIdentifiers', 'evm.gasEstimates', 'evm.assembly' ]
         }
     }
   }
@@ -150,20 +150,29 @@ export interface CompilerInputOptions {
     language?: Language
 }
 
-export type EVMVersion = 'homestead' | 'tangerineWhistle' | 'spuriousDragon' | 'byzantium' | 'constantinople' | 'petersburg' | 'istanbul' | 'muirGlacier' | 'berlin' | 'london' | null
+export type EVMVersion = 'homestead' | 'tangerineWhistle' | 'spuriousDragon' | 'byzantium' | 'constantinople' | 'petersburg' | 'istanbul' | 'berlin' | 'london' | null
 
 export type Language = 'Solidity' | 'Yul'
+
+export enum CompilerRetriggerMode {
+  'none' ,
+  'retrigger'
+}
 
 export interface CompilerState {
     compileJSON: ((input: SourceWithTarget) => void) | null,
     worker: any,
     currentVersion: string| null| undefined,
+    compilerLicense: string| null
     optimize: boolean,
     runs: number
     evmVersion: EVMVersion| null,
     language: Language,
     compilationStartTime: number| null,
     target: string | null,
+    useFileConfiguration: boolean,
+    configFileContent: string,
+    compilerRetriggerMode: CompilerRetriggerMode,
     lastCompilationResult: {
       data: CompilationResult | null,
       source: SourceWithTarget | null | undefined
@@ -180,13 +189,17 @@ export interface MessageToWorker {
   job?: number,
   input?: CompilerInput,
   data?: string
+  timestamp?: number
 }
 
 export interface MessageFromWorker {
   cmd: string,
+  license?: string,
   job?: number,
   missingInputs?: string[],
+  input?: any,
   data?: string
+  timestamp?: number
 }
 
 export interface visitContractsCallbackParam {

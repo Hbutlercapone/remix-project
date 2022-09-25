@@ -1,3 +1,4 @@
+/* eslint-disable no-undef */
 export interface TreeViewProps {
     children?: React.ReactNode,
     id?: string
@@ -20,5 +21,6 @@ export interface TreeViewItemProps {
     controlBehaviour?: boolean
     innerRef?: any,
     onContextMenu?: (...args: any) => void,
-    onBlur?: (...args: any) => void
+    onBlur?: (...args: any) => void,
+    showIcon?: boolean
 }

@@ -1,5 +1,5 @@
 import { Profile } from '@remixproject/plugin-utils'
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+// eslint-disable-next-line @typescript-eslint/no-unused-vars,no-use-before-define
 import React from 'react'
 import '../remix-ui-plugin-manager.css'
 interface PluginCardProps {
@@ -22,6 +22,9 @@ function InactivePluginCard ({
           <h6 className="remixui_displayName plugin-name">
             <div>
               { profile.displayName || profile.name }
+              { profile?.maintainedBy?.toLowerCase() == "remix" &&
+                <i aria-hidden="true" className="px-1 text-success fas fa-check" title="Verified by Remix"></i>
+              }
               { profile.documentation &&
                 <a href={profile.documentation} className="px-1" title="link to documentation" target="_blank" rel="noreferrer">
                   <i aria-hidden="true" className="fas fa-book"/>

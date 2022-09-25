@@ -45,6 +45,7 @@ const sources = [
 ]
 
 module.exports = {
+  '@disabled': true,
   before: function (browser, done) {
     init(browser, done)
   },
@@ -52,25 +53,28 @@ module.exports = {
   '@sources': function () {
     return sources
   },
+  'start Remixd': function (browser) {
+    startRemixd(browser)
 
-  Remixd: function (browser) {
+  },
+  'run Remixd tests #group4': function (browser) {
     runTests(browser)
   },
-  'Import from node_modules ': function (browser) {
+  'Import from node_modules #group1': function (browser) {
     /*
       when a relative import is used (i.e import "openzeppelin-solidity/contracts/math/SafeMath.sol")
       remix (as well as truffle) try to resolve it against the node_modules and installed_contracts folder.
     */
 
     browser.waitForElementVisible('#icon-panel', 2000)
-      // .clickLaunchIcon('filePanel')
+      .clickLaunchIcon('filePanel')
       .click('[data-path="ballot.sol"]')
       .addFile('test_import_node_modules.sol', sources[3]['test_import_node_modules.sol'])
       .clickLaunchIcon('solidity')
       .setSolidityCompilerVersion('soljson-v0.5.0+commit.1d4f565a.js')
       .testContracts('test_import_node_modules.sol', sources[3]['test_import_node_modules.sol'], ['SafeMath'])
   },
-  'Import from node_modules and reference a github import': function (browser) {
+  'Import from node_modules and reference a github import #group2': function (browser) {
     browser.waitForElementVisible('#icon-panel', 2000)
       .clickLaunchIcon('filePanel')
       .addFile('test_import_node_modules_with_github_import.sol', sources[4]['test_import_node_modules_with_github_import.sol'])
@@ -78,30 +82,33 @@ module.exports = {
       .setSolidityCompilerVersion('soljson-v0.8.0+commit.c7dfd78e.js') // open-zeppelin moved to pragma ^0.8.0
       .testContracts('test_import_node_modules_with_github_import.sol', sources[4]['test_import_node_modules_with_github_import.sol'], ['ERC20', 'test11'])
   },
-  'Static Analysis run with remixd': function (browser) {
-    browser.testContracts('test_static_analysis_with_remixd_and_hardhat.sol', sources[5]['test_static_analysis_with_remixd_and_hardhat.sol'], ['test5'])
+  'Static Analysis run with remixd #group3': function (browser) {
+    browser.testContracts('test_static_analysis_with_remixd_and_hardhat.sol', sources[5]['test_static_analysis_with_remixd_and_hardhat.sol'], ['test5']).pause(2000)
       .clickLaunchIcon('solidityStaticAnalysis')
-      .click('#staticanalysisButton button')
+      /*
+      .click('#staticanalysisButton button').pause(4000)
       .waitForElementPresent('#staticanalysisresult .warning', 2000, true, function () {
         browser
-          .click('[data-id="staticAnalysisModuleMiscellaneous1"')
-          .waitForElementPresent('.highlightLine15', 60000)
+          .waitForElementVisible('[data-id="staticAnalysisModuleMiscellaneous1Button"]')
+          .click('[data-id="staticAnalysisModuleMiscellaneous1Button"]')
+          .waitForElementVisible('.highlightLine16', 60000)
           .getEditorValue((content) => {
             browser.assert.ok(content.indexOf(
               'function _sendLogPayload(bytes memory payload) private view {') !== -1,
             'code has not been loaded')
           })
       })
+      */
   },
 
   'Run git status': '' + function (browser) {
     browser
-      .executeScript('git status')
+      .executeScriptInTerminal('git status')
       .pause(3000)
       .journalLastChildIncludes('On branch ')
   },
 
-  'Close Remixd': function (browser) {
+  'Close Remixd #group3': function (browser) {
     browser
       .clickLaunchIcon('pluginManager')
       .scrollAndClick('#pluginManager *[data-id="pluginManagerComponentDeactivateButtonremixd"]')
@@ -109,7 +116,7 @@ module.exports = {
   }
 }
 
-function runTests (browser: NightwatchBrowser) {
+function startRemixd (browser: NightwatchBrowser) {
   const browserName = browser.options.desiredCapabilities.browserName
   if (browserName === 'safari' || browserName === 'internet explorer') {
     console.log('do not run remixd test for ' + browserName + ': sauce labs doesn\'t seems to handle websocket')
@@ -122,11 +129,16 @@ function runTests (browser: NightwatchBrowser) {
     .clickLaunchIcon('filePanel')
     .clickLaunchIcon('pluginManager')
     .scrollAndClick('#pluginManager *[data-id="pluginManagerComponentActivateButtonremixd"]')
-    .waitForElementVisible('#modal-footer-ok', 2000)
+    .waitForElementVisible('*[data-id="remixdConnect-modal-footer-ok-react"]', 2000)
     .pause(2000)
-    .click('#modal-footer-ok')
+    .click('*[data-id="remixdConnect-modal-footer-ok-react"]')
+    .pause(10000)
     // .click('*[data-id="workspacesModalDialog-modal-footer-ok-react"]')
-    .clickLaunchIcon('filePanel')
+}
+
+function runTests (browser: NightwatchBrowser) {
+  const browserName = browser.options.desiredCapabilities.browserName
+  browser.clickLaunchIcon('filePanel')
     .waitForElementVisible('[data-path="folder1"]')
     .click('[data-path="folder1"]')
     .waitForElementVisible('[data-path="contract1.sol"]')
@@ -152,13 +164,11 @@ function runTests (browser: NightwatchBrowser) {
     })
     .clickLaunchIcon('filePanel')
     .waitForElementVisible('[data-path="folder1"]')
-    .click('[data-path="folder1"]')
-    .click('[data-path="folder1"]') // click twice because remixd does not return nested folder details after update
     .waitForElementVisible('[data-path="folder1/contract1.sol"]')
     .waitForElementVisible('[data-path="folder1/renamed_contract_' + browserName + '.sol"]') // check if renamed file is preset
     .waitForElementNotPresent('[data-path="folder1/contract_' + browserName + '.sol"]') // check if renamed (old) file is not present
     .waitForElementNotPresent('[data-path="folder1/contract_' + browserName + '_toremove.sol"]') // check if removed (old) file is not present
-    // .click('[data-path="folder1/renamed_contract_' + browserName + '.sol"]')
+  // .click('[data-path="folder1/renamed_contract_' + browserName + '.sol"]')
 }
 
 function testImportFromRemixd (browser: NightwatchBrowser, callback: VoidFunction) {

@@ -1,3 +1,5 @@
+/* eslint-disable no-undef */
+
 export interface ExtractData {
     children?: Array<{key: number | string, value: ExtractData}>
     self?: string | number,
@@ -13,9 +15,12 @@ export interface ExtractData {
 }
 
 export type ExtractFunc = (json: any, parent?: any) => ExtractData
-
+export type FormatSelfFunc = (key: string | number, data: ExtractData) => JSX.Element
+export type RegisterEventType = (type: string, listener: any) => void // listener is a function
+export type TriggerEventType = (type: string, payload: Array<any>) => void
 export interface DropdownPanelProps {
     dropdownName: string,
+    className?: string,
     dropdownMessage?: string,
     calldata?: {
         [key: string]: string
@@ -24,13 +29,11 @@ export interface DropdownPanelProps {
     loading?: boolean,
     extractFunc?: ExtractFunc,
     formatSelfFunc?: FormatSelfFunc,
-    registerEvent?: Function,
-    triggerEvent?: Function,
+    registerEvent?: RegisterEventType,
+    triggerEvent?: TriggerEventType,
     loadMoreEvent?: string,
     loadMoreCompletedEvent?: string,
     bodyStyle?: React.CSSProperties,
     headStyle?: React.CSSProperties,
     hexHighlight?: boolean // highlight non zero value of hex value
 }
-
-export type FormatSelfFunc = (key: string | number, data: ExtractData) => JSX.Element

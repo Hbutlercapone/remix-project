@@ -12,6 +12,8 @@ docs/_build
 TODO
 soljson.js
 *~
+*_group*.*.ts
+*_group*.ts
 
 
 # compiled output
@@ -30,6 +32,7 @@ soljson.js
 *.launch
 .settings/
 *.sublime-workspace
+.vscode/
 
 # IDE - VSCode
 .vscode/*
@@ -51,3 +54,5 @@ testem.log
 
 # System Files
 .DS_Store
+.vscode/settings.json
+.vscode/launch.json

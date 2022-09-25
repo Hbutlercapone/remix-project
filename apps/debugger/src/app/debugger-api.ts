@@ -4,9 +4,10 @@ import { CompilationOutput, Sources } from '@remix-ui/debugger-ui'
 import type { CompilationResult } from '@remix-project/remix-solidity-ts'
 
 export const DebuggerApiMixin = (Base) => class extends Base {
+
+  initialWeb3
+
   initDebuggerApi () {
-    this.debugHash = null
-        
     const self = this
     this.web3Provider = {
       sendAsync (payload, callback) {
@@ -16,6 +17,8 @@ export const DebuggerApiMixin = (Base) => class extends Base {
       }
     }
     this._web3 = new Web3(this.web3Provider)
+    // this._web3 can be overwritten and reset to initial value in 'debug' method
+    this.initialWeb3 = this._web3
     remixDebug.init.extendWeb3(this._web3)
 
     this.offsetToLineColumnConverter = {
@@ -39,7 +42,7 @@ export const DebuggerApiMixin = (Base) => class extends Base {
   }
 
   async highlight (lineColumnPos, path) {
-    await this.call('editor', 'highlight', lineColumnPos, path)
+    await this.call('editor', 'highlight', lineColumnPos, path, '', { focus: true })
   }
 
   async getFile (path) {
@@ -78,7 +81,7 @@ export const DebuggerApiMixin = (Base) => class extends Base {
     const target = (address && remixDebug.traceHelper.isContractCreation(address)) ? receipt.contractAddress : address
     const targetAddress = target || receipt.contractAddress || receipt.to
     const codeAtAddress = await this._web3.eth.getCode(targetAddress)
-    const output = await this.call('fetchAndCompile', 'resolve', targetAddress, codeAtAddress, 'browser/.debug')
+    const output = await this.call('fetchAndCompile', 'resolve', targetAddress, codeAtAddress, '.debug')
     if (output) {
       return new CompilerAbstract(output.languageversion, output.data, output.source)
     }
@@ -122,8 +125,14 @@ export const DebuggerApiMixin = (Base) => class extends Base {
   }
 
   debug (hash, web3?) {
-    this.debugHash = hash
-    if (web3) remixDebug.init.extendWeb3(web3)
+    try {
+      this.call('fetchAndCompile', 'clearCache')
+    } catch (e) {
+      console.error(e)
+    }
+    if (web3) this._web3 = web3
+    else this._web3 = this.initialWeb3
+    remixDebug.init.extendWeb3(this._web3)
     if (this.onDebugRequestedListener) this.onDebugRequestedListener(hash, web3)
   }
 
@@ -142,6 +151,14 @@ export const DebuggerApiMixin = (Base) => class extends Base {
   }
 
   showMessage (title: string, message: string) {}
+
+  onStartDebugging () {
+    this.call('layout', 'maximiseSidePanel')
+  }
+
+  onStopDebugging () {
+    this.call('layout', 'resetSidePanel')
+  }
 }
 
 export class CompilerAbstract implements CompilationOutput { // this is a subset of /remix-ide/src/app/compiler/compiler-abstract.js

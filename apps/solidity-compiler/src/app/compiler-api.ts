@@ -1,25 +1,31 @@
-import { compile } from '@remix-project/remix-solidity'
+import React from 'react';
+import { compile, helper } from '@remix-project/remix-solidity'
 import { CompileTabLogic, parseContracts } from '@remix-ui/solidity-compiler' // eslint-disable-line
 import type { ConfigurationSettings } from '@remix-project/remix-lib-ts'
 
 export const CompilerApiMixin = (Base) => class extends Base {
   currentFile: string
-  contractMap: {
-    file: string
-  } | Record<string, any>
+  compilationDetails: {
+    contractMap: {
+      file: string
+    } | Record<string, any>,
+    contractsDetails: Record<string, any>,
+    target?: string
+  }
   compileErrors: any
   compileTabLogic: CompileTabLogic
-  contractsDetails: Record<string, any>
-
   configurationSettings: ConfigurationSettings
 
   onCurrentFileChanged: (fileName: string) => void
-  onResetResults: () => void
-  onSetWorkspace: (workspace: any) => void
+  // onResetResults: () => void
+  onSetWorkspace: (isLocalhost: boolean, workspaceName: string) => void
+  onFileRemoved: (path: string) => void
   onNoFileSelected: () => void
-  onCompilationFinished: (contractsDetails: any, contractMap: any) => void
+  onCompilationFinished: (compilationDetails: { contractMap: { file: string } | Record<string, any>, contractsDetails: Record<string, any> }) => void
   onSessionSwitched: () => void
   onContentChanged: () => void
+  onFileClosed: (name: string) => void
+  statusChanged: (data: { key: string, title?: string, type?: string }) => void
 
   initCompilerApi () {
     this.configurationSettings = null
@@ -29,15 +35,15 @@ export const CompilerApiMixin = (Base) => class extends Base {
       errorContainer: null,
       contractEl: null
     }
-    
-    this.contractsDetails = {}
+
+    this.compilationDetails = {
+      contractsDetails:{},
+      contractMap: {}
+    }
     this.data = {
       eventHandlers: {},
       loading: false
     }
-
-    this.contractMap = {}
-    this.contractsDetails = {}
 
     this.compileErrors = {}
     this.compiledFileName = ''
@@ -54,7 +60,7 @@ export const CompilerApiMixin = (Base) => class extends Base {
     if (this.data.eventHandlers.onLoadingCompiler) {
       this.compiler.event.unregister('loadingCompiler', this.data.eventHandlers.onLoadingCompiler)
     }
-    
+
     if (this.data.eventHandlers.onCompilerLoaded) {
       this.compiler.event.unregister('compilerLoaded', this.data.eventHandlers.onCompilerLoaded)
     }
@@ -62,7 +68,7 @@ export const CompilerApiMixin = (Base) => class extends Base {
     if (this.data.eventHandlers.onCompilationFinished) {
       this.compiler.event.unregister('compilationFinished', this.data.eventHandlers.onCompilationFinished)
     }
-    
+
     this.off('filePanel', 'setWorkspace')
 
     this.off('remixd', 'rootFolderChanged')
@@ -72,19 +78,19 @@ export const CompilerApiMixin = (Base) => class extends Base {
     if (this.data.eventHandlers.onStartingCompilation) {
       this.compileTabLogic.event.off('startingCompilation', this.data.eventHandlers.onStartingCompilation)
     }
-    
+
     if (this.data.eventHandlers.onRemoveAnnotations) {
       this.compileTabLogic.event.off('removeAnnotations', this.data.eventHandlers.onRemoveAnnotations)
-    }    
+    }
 
     this.off('fileManager', 'currentFileChanged')
-    
-    this.off('fileManager', 'noFileSelected')    
-    
+
+    this.off('fileManager', 'noFileSelected')
+
     this.off('themeModule', 'themeChanged')
-    
+
     if (this.data.eventHandlers.onKeyDown) {
-      window.document.removeEventListener('keydown', this.data.eventHandlers.onKeyDown)  
+      window.document.removeEventListener('keydown', this.data.eventHandlers.onKeyDown)
     }
   }
 
@@ -92,14 +98,22 @@ export const CompilerApiMixin = (Base) => class extends Base {
     return this.call('contentImport', 'resolveAndSave', url)
   }
 
+  runScriptAfterCompilation (fileName: string) {
+    this.call('compileAndRun', 'runScriptAfterCompilation', fileName)
+  }
+
   compileWithHardhat (configFile) {
     return this.call('hardhat', 'compile', configFile)
+  }
+
+  compileWithTruffle (configFile) {
+    return this.call('truffle', 'compile', configFile)
   }
 
   logToTerminal (content) {
     return this.call('terminal', 'log', content)
   }
-  
+
   getCompilationResult () {
     return this.compileTabLogic.compiler.state.lastCompilationResult
   }
@@ -143,12 +157,17 @@ export const CompilerApiMixin = (Base) => class extends Base {
   // This function is used for passing the compiler configuration to 'remix-tests'
   getCurrentCompilerConfig () {
     const compilerState = this.getCompilerState()
-    return {
+    const compilerDetails: any = {
       currentVersion: compilerState.currentVersion,
       evmVersion: compilerState.evmVersion,
       optimize: compilerState.optimize,
       runs: compilerState.runs
     }
+    if (this.data.loading) {
+      compilerDetails.currentVersion = this.data.loadingUrl
+      compilerDetails.isUrl = true
+    }
+    return compilerDetails
   }
 
   /**
@@ -157,8 +176,8 @@ export const CompilerApiMixin = (Base) => class extends Base {
    * @param {object} settings {evmVersion, optimize, runs, version, language}
    */
   setCompilerConfig (settings) {
-    this.configurationSettings = settings    
-  }  
+    this.configurationSettings = settings
+  }
 
   fileExists (fileName) {
     return this.call('fileManager', 'exists', fileName)
@@ -182,31 +201,37 @@ export const CompilerApiMixin = (Base) => class extends Base {
 
   resetResults () {
     this.currentFile = ''
-    this.contractsDetails = {}
-    this.emit('statusChanged', { key: 'none' })
-    if (this.onResetResults) this.onResetResults()
+    this.compilationDetails = {
+      contractsDetails: {},
+      contractMap: {}
+    }
+    this.statusChanged({ key: 'none' })
+    // if (this.onResetResults) this.onResetResults()
   }
 
   listenToEvents () {
     this.on('editor', 'contentChanged', () => {
-      this.emit('statusChanged', { key: 'edited', title: 'the content has changed, needs recompilation', type: 'info' })
+      this.statusChanged({ key: 'edited', title: 'the content has changed, needs recompilation', type: 'info' })
       if (this.onContentChanged) this.onContentChanged()
     })
 
-    this.data.eventHandlers.onLoadingCompiler = () => {
+    this.data.eventHandlers.onLoadingCompiler = (url) => {
       this.data.loading = true
-      this.emit('statusChanged', { key: 'loading', title: 'loading compiler...', type: 'info' })
+      this.data.loadingUrl = url
+      this.statusChanged({ key: 'loading', title: 'loading compiler...', type: 'info' })
+      this.emit('loadingCompiler', url)
     }
     this.compiler.event.register('loadingCompiler', this.data.eventHandlers.onLoadingCompiler)
 
-    this.data.eventHandlers.onCompilerLoaded = () => {
+    this.data.eventHandlers.onCompilerLoaded = (version, license) => {
       this.data.loading = false
-      this.emit('statusChanged', { key: 'none' })
+      this.statusChanged({ key: 'none' })
+      this.emit('compilerLoaded', version, license)
     }
     this.compiler.event.register('compilerLoaded', this.data.eventHandlers.onCompilerLoaded)
 
     this.data.eventHandlers.onStartingCompilation = () => {
-      this.emit('statusChanged', { key: 'loading', title: 'compiling...', type: 'info' })
+      this.statusChanged({ key: 'loading', title: 'compiling...', type: 'info' })
     }
 
     this.data.eventHandlers.onRemoveAnnotations = () => {
@@ -215,17 +240,21 @@ export const CompilerApiMixin = (Base) => class extends Base {
 
     this.on('filePanel', 'setWorkspace', (workspace) => {
       this.resetResults()
-      if (this.onSetWorkspace) this.onSetWorkspace(workspace.isLocalhost)
+      if (this.onSetWorkspace) this.onSetWorkspace(workspace.isLocalhost, workspace.name)
+    })
+
+    this.on('fileManager', 'fileRemoved', (path) => {
+      if (this.onFileRemoved) this.onFileRemoved(path)
     })
 
     this.on('remixd', 'rootFolderChanged', () => {
       this.resetResults()
-      if (this.onSetWorkspace) this.onSetWorkspace(true)
+      if (this.onSetWorkspace) this.onSetWorkspace(true, 'localhost')
     })
 
     this.on('editor', 'sessionSwitched', () => {
       if (this.onSessionSwitched) this.onSessionSwitched()
-    })    
+    })
 
     this.compileTabLogic.event.on('startingCompilation', this.data.eventHandlers.onStartingCompilation)
     this.compileTabLogic.event.on('removeAnnotations', this.data.eventHandlers.onRemoveAnnotations)
@@ -235,42 +264,62 @@ export const CompilerApiMixin = (Base) => class extends Base {
       if (this.onCurrentFileChanged) this.onCurrentFileChanged(name)
     }
     this.on('fileManager', 'currentFileChanged', this.data.eventHandlers.onCurrentFileChanged)
-    
+
     this.data.eventHandlers.onNoFileSelected = () => {
       this.currentFile = ''
       if (this.onNoFileSelected) this.onNoFileSelected()
     }
     this.on('fileManager', 'noFileSelected', this.data.eventHandlers.onNoFileSelected)
-    
-    this.data.eventHandlers.onCompilationFinished = (success, data, source) => {
+
+    this.data.eventHandlers.onFileClosed = (name: string) => {
+      this.onFileClosed(name)
+    }
+
+    this.on('fileManager', 'fileClosed', this.data.eventHandlers.onFileClosed)
+
+    this.data.eventHandlers.onCompilationFinished = async (success, data, source, input, version) => {
       this.compileErrors = data
       if (success) {
         // forwarding the event to the appManager infra
-        this.emit('compilationFinished', source.target, source, 'soljson', data)
+        this.emit('compilationFinished', source.target, source, 'soljson', data, input, version)
         if (data.errors && data.errors.length > 0) {
-          this.emit('statusChanged', {
+          this.statusChanged({
             key: data.errors.length,
             title: `compilation finished successful with warning${data.errors.length > 1 ? 's' : ''}`,
             type: 'warning'
           })
-        } else this.emit('statusChanged', { key: 'succeed', title: 'compilation successful', type: 'success' })
-        // Store the contracts
-        this.contractsDetails = {}
-        this.compiler.visitContracts((contract) => {
-          this.contractsDetails[contract.name] = parseContracts(
-            contract.name,
-            contract.object,
-            this.compiler.getSource(contract.file)
-          )
-        })
+        } else this.statusChanged({ key: 'succeed', title: 'compilation successful', type: 'success' })
       } else {
         const count = (data.errors ? data.errors.filter(error => error.severity === 'error').length : 0 + (data.error ? 1 : 0))
-        this.emit('statusChanged', { key: count, title: `compilation failed with ${count} error${count > 1 ? 's' : ''}`, type: 'error' })
+        this.statusChanged({ key: count, title: `compilation failed with ${count} error${count > 1 ? 's' : ''}`, type: 'error' })
       }
-      // Update contract Selection
-      this.contractMap = {}
-      if (success) this.compiler.visitContracts((contract) => { this.contractMap[contract.name] = contract })
-      if (this.onCompilationFinished) this.onCompilationFinished(this.contractsDetails, this.contractMap)
+      // Store the contracts and Update contract Selection
+      if (success) {
+        this.compilationDetails = await this.visitsContractApi(source, data)
+      } else {
+        this.compilationDetails = {
+          contractMap: {},
+          contractsDetails: {},
+          target: source ? source.target : null
+        }
+      }
+      if (this.onCompilationFinished) this.onCompilationFinished(this.compilationDetails)
+      // set annotations
+      if (data.errors) {
+        for (const error of data.errors) {
+          let pos = helper.getPositionDetails(error.formattedMessage)
+          const file = pos.errFile
+          if (file) {
+            pos = {
+              row: pos.errLine,
+              column: pos.errCol,
+              text: error.formattedMessage,
+              type: error.severity
+            }
+            await this.call('editor', 'addAnnotation', pos, file)
+          }
+        }
+      }     
     }
     this.compiler.event.register('compilationFinished', this.data.eventHandlers.onCompilationFinished)
 
@@ -282,15 +331,46 @@ export const CompilerApiMixin = (Base) => class extends Base {
       }
     }
     this.on('themeModule', 'themeChanged', this.data.eventHandlers.onThemeChanged)
-    
+
     // Run the compiler instead of trying to save the website
-    this.data.eventHandlers.onKeyDown = (e) => {
+    this.data.eventHandlers.onKeyDown = async (e) => {
       // ctrl+s or command+s
-      if ((e.metaKey || e.ctrlKey) && e.keyCode === 83) {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.keyCode === 83 && this.currentFile !== '') {
         e.preventDefault()
-        this.compileTabLogic.runCompiler(this.getAppParameter('hardhat-compilation'))
+        if (this.currentFile && (this.currentFile.endsWith('.sol') || this.currentFile.endsWith('.yul'))) {
+          if(await this.getAppParameter('hardhat-compilation')) this.compileTabLogic.runCompiler('hardhat')
+          else if(await this.getAppParameter('truffle-compilation')) this.compileTabLogic.runCompiler('truffle')
+          else this.compileTabLogic.runCompiler(undefined)
+        }
       }
     }
     window.document.addEventListener('keydown', this.data.eventHandlers.onKeyDown)
+  }
+
+  async visitsContractApi (source, data): Promise<{ contractMap: { file: string } | Record<string, any>, contractsDetails: Record<string, any>, target?: string }> {
+    return new Promise((resolve) => {
+      if (!data.contracts || (data.contracts && Object.keys(data.contracts).length === 0)) {
+        return resolve({
+          contractMap: {}, 
+          contractsDetails: {},
+          target: source.target
+        })
+      }
+      const contractMap = {}
+      const contractsDetails = {}
+      this.compiler.visitContracts((contract) => {
+        contractMap[contract.name] = contract
+        contractsDetails[contract.name] = parseContracts(
+          contract.name,
+          contract.object,
+          this.compiler.getSource(contract.file)
+        )
+      })
+      return resolve({
+        contractMap, 
+        contractsDetails,
+        target: source.target
+      })
+    })
   }
 }
