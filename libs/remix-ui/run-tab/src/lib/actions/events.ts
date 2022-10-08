@@ -2,10 +2,12 @@ import { envChangeNotification } from "@remix-ui/helper"
 import { RunTab } from "../types/run-tab"
 import { setExecutionContext, setFinalContext, updateAccountBalances } from "./account"
 import { addExternalProvider, addInstance, removeExternalProvider, setNetworkNameFromProvider } from "./actions"
-import { addDeployOption, clearAllInstances, clearRecorderCount, fetchContractListSuccess, resetUdapp, setCurrentContract, setCurrentFile, setLoadType, setProxyEnvAddress, setRecorderCount, setSendValue } from "./payload"
+import { addDeployOption, clearAllInstances, clearRecorderCount, fetchContractListSuccess, resetUdapp, setCurrentContract, setCurrentFile, setLoadType, setProxyEnvAddress, setRecorderCount, setRemixDActivated, setSendValue } from "./payload"
 import { CompilerAbstract } from '@remix-project/remix-solidity'
 import * as ethJSUtil from 'ethereumjs-util'
 import Web3 from 'web3'
+import { Plugin } from "@remixproject/engine"
+const _paq = window._paq = window._paq || []
 
 export const setupEvents = (plugin: RunTab, dispatch: React.Dispatch<any>) => {
   plugin.blockchain.events.on('newTransaction', (tx, receipt) => {
@@ -41,15 +43,21 @@ export const setupEvents = (plugin: RunTab, dispatch: React.Dispatch<any>) => {
 
   plugin.blockchain.event.register('removeProvider', name => removeExternalProvider(dispatch, name))
 
-  plugin.on('solidity', 'compilationFinished', (file, source, languageVersion, data, input, version) => broadcastCompilationResult(plugin, dispatch, file, source, languageVersion, data, input))
+  plugin.on('solidity', 'compilationFinished', (file, source, languageVersion, data, input, version) => broadcastCompilationResult('remix', plugin, dispatch, file, source, languageVersion, data, input))
 
-  plugin.on('vyper', 'compilationFinished', (file, source, languageVersion, data) => broadcastCompilationResult(plugin, dispatch, file, source, languageVersion, data))
+  plugin.on('vyper', 'compilationFinished', (file, source, languageVersion, data) => broadcastCompilationResult('vyper', plugin, dispatch, file, source, languageVersion, data))
 
-  plugin.on('lexon', 'compilationFinished', (file, source, languageVersion, data) => broadcastCompilationResult(plugin, dispatch, file, source, languageVersion, data))
+  plugin.on('lexon', 'compilationFinished', (file, source, languageVersion, data) => broadcastCompilationResult('lexon', plugin, dispatch, file, source, languageVersion, data))
 
-  plugin.on('yulp', 'compilationFinished', (file, source, languageVersion, data) => broadcastCompilationResult(plugin, dispatch, file, source, languageVersion, data))
+  plugin.on('yulp', 'compilationFinished', (file, source, languageVersion, data) => broadcastCompilationResult('yulp', plugin, dispatch, file, source, languageVersion, data))
 
-  plugin.on('nahmii-compiler', 'compilationFinished', (file, source, languageVersion, data) => broadcastCompilationResult(plugin, dispatch, file, source, languageVersion, data))
+  plugin.on('nahmii-compiler', 'compilationFinished', (file, source, languageVersion, data) => broadcastCompilationResult('nahmii', plugin, dispatch, file, source, languageVersion, data))
+
+  plugin.on('hardhat', 'compilationFinished', (file, source, languageVersion, data) => broadcastCompilationResult('hardhat', plugin, dispatch, file, source, languageVersion, data))
+
+  plugin.on('foundry', 'compilationFinished', (file, source, languageVersion, data) => broadcastCompilationResult('foundry', plugin, dispatch, file, source, languageVersion, data))
+
+  plugin.on('truffle', 'compilationFinished', (file, source, languageVersion, data) => broadcastCompilationResult('truffle', plugin, dispatch, file, source, languageVersion, data))
 
   plugin.on('udapp', 'setEnvironmentModeReducer', (env: { context: string, fork: string }, from: string) => {
     plugin.call('notification', 'toast', envChangeNotification(env, from))
@@ -67,6 +75,21 @@ export const setupEvents = (plugin: RunTab, dispatch: React.Dispatch<any>) => {
   plugin.on('filePanel', 'setWorkspace', () => {
     dispatch(resetUdapp())
     resetAndInit(plugin)
+    plugin.call('manager', 'isActive', 'remixd').then((activated) => {
+      dispatch(setRemixDActivated(activated))
+    })
+  })
+
+  plugin.on('manager', 'pluginActivated', (plugin: Plugin) => {
+    if (plugin.name === 'remixd') {
+      dispatch(setRemixDActivated(true))
+    }
+  })
+
+  plugin.on('manager', 'pluginDeactivated', (plugin: Plugin) => {
+    if (plugin.name === 'remixd') {
+      dispatch(setRemixDActivated(false))
+    }
   })
 
   plugin.fileManager.events.on('currentFileChanged', (currentFile: string) => {
@@ -92,14 +115,15 @@ export const setupEvents = (plugin: RunTab, dispatch: React.Dispatch<any>) => {
   })
 }
 
-const broadcastCompilationResult = async (plugin: RunTab, dispatch: React.Dispatch<any>, file, source, languageVersion, data, input?) => {
+const broadcastCompilationResult = async (compilerName: string, plugin: RunTab, dispatch: React.Dispatch<any>, file, source, languageVersion, data, input?) => {
+  _paq.push(['trackEvent', 'udapp', 'broadcastCompilationResult', compilerName])
   // TODO check whether the tab is configured
   const compiler = new CompilerAbstract(languageVersion, data, source, input)
   plugin.compilersArtefacts[languageVersion] = compiler
   plugin.compilersArtefacts.__last = compiler
 
   const contracts = getCompiledContracts(compiler).map((contract) => {
-    return { name: languageVersion, alias: contract.name, file: contract.file, compiler }
+    return { name: languageVersion, alias: contract.name, file: contract.file, compiler, compilerName }
   })
   if ((contracts.length > 0)) {
     const contractsInCompiledFile = contracts.filter(obj => obj.file === file)

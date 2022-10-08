@@ -11,10 +11,10 @@ const requiredModules = [ // services + layout views + system views
   'filePanel', 'terminal', 'settings', 'pluginManager', 'tabs', 'udapp', 'dGitProvider', 'solidity', 'solidity-logic', 'gistHandler', 'layout',
   'notification', 'permissionhandler', 'walkthrough', 'storage', 'restorebackupzip', 'link-libraries', 'deploy-libraries', 'openzeppelin-proxy', 
   'hardhat-provider', 'ganache-provider', 'foundry-provider', 'basic-http-provider', 'injected-optimism-provider', 'injected-arbitrum-one-provider',
-  'compileAndRun', 'search', 'recorder', 'fileDecorator', 'codeParser']
+  'compileAndRun', 'search', 'recorder', 'fileDecorator', 'codeParser', 'codeFormatter']
 
 // dependentModules shouldn't be manually activated (e.g hardhat is activated by remixd)
-const dependentModules = ['hardhat', 'truffle', 'slither'] 
+const dependentModules = ['foundry', 'hardhat', 'truffle', 'slither'] 
 
 const sensitiveCalls = {
   'fileManager': ['writeFile', 'copyFile', 'rename', 'copyDir'],
@@ -25,7 +25,8 @@ const sensitiveCalls = {
 export function isNative(name) {
   // nativePlugin allows to bypass the permission request
   const nativePlugins = ['vyper', 'workshops', 'debugger', 'remixd', 'menuicons', 'solidity', 'solidity-logic', 'solidityStaticAnalysis', 'solidityUnitTesting', 
-    'layout', 'notification', 'hardhat-provider', 'ganache-provider', 'foundry-provider', 'basic-http-provider', 'injected-optimism-provider', 'injected-arbitrum-one-provider']
+    'layout', 'notification', 'hardhat-provider', 'ganache-provider', 'foundry-provider', 'basic-http-provider', 'injected-optimism-provider',
+    'tabs', 'injected-arbitrum-one-provider']
   return nativePlugins.includes(name) || requiredModules.includes(name)
 }
 
@@ -92,7 +93,7 @@ export class RemixAppManager extends PluginManager {
   }
 
   onPluginActivated(plugin) {
-    this.pluginLoader.set(plugin, this.actives)
+    this.pluginLoader.set(plugin, this.actives.filter((plugin) => !this.isDependent(plugin)))
     this.event.emit('activate', plugin)
     this.emit('activate', plugin)
     if (!requiredModules.includes(plugin.name)) _paq.push(['trackEvent', 'pluginManager', 'activate', plugin.name])
@@ -109,7 +110,7 @@ export class RemixAppManager extends PluginManager {
   }
 
   onPluginDeactivated(plugin) {
-    this.pluginLoader.set(plugin, this.actives)
+    this.pluginLoader.set(plugin, this.actives.filter((plugin) => !this.isDependent(plugin)))
     this.event.emit('deactivate', plugin)
     _paq.push(['trackEvent', 'pluginManager', 'deactivate', plugin.name])
   }

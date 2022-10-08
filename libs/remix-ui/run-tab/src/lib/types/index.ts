@@ -132,12 +132,14 @@ export interface ContractDropdownProps {
     proxyKey: string,
     loadType: 'abi' | 'sol' | 'other',
     currentFile: string,
+    compilationSource: string
     currentContract: string,
     compilationCount: number,
     isRequesting: boolean,
     isSuccessful: boolean,
     error: string
   },
+  syncContracts: () => void,
   getSelectedContract: (contractName: string, compiler: CompilerAbstract) => ContractData,
   modal: (title: string, message: string | JSX.Element, okLabel: string, okFn: () => void, cancelLabel?: string, cancelFn?: () => void) => void,
   passphrase: string,
@@ -163,6 +165,7 @@ export interface ContractDropdownProps {
   networkName: string,
   setNetworkName: (name: string) => void,
   setSelectedContract: (contractName: string) => void
+  remixdActivated: boolean
 }
 
 export interface RecorderProps {

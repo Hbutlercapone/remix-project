@@ -74,30 +74,15 @@ class Editor extends Plugin {
 
   updateComponent(state) {
     return <EditorUI
-    editorAPI={state.api}
-    themeType={state.currentThemeType}
-    currentFile={state.currentFile}
-    events={state.events}
-    plugin={state.plugin}
-  />
+      editorAPI={state.api}
+      themeType={state.currentThemeType}
+      currentFile={state.currentFile}
+      events={state.events}
+      plugin={state.plugin}
+    />
   }
 
   render () {
-    
-/*     if (this.el) return this.el
-
-    this.el = document.createElement('div')
-    this.el.setAttribute('id', 'editorView')
-    this.el.currentContent = () => this.currentContent() // used by e2e test
-    this.el.setCurrentContent = (value) => {
-      if (this.sessions[this.currentFile]) {
-        this.sessions[this.currentFile].setValue(value)
-        this._onChange(this.currentFile)
-      }
-    }
-    this.el.gotoLine = (line, column) => this.gotoLine(line, column || 0)
-    this.el.getCursorPosition = () => this.getCursorPosition() */
-
     return <div ref={(element)=>{ 
       this.ref = element
       this.ref.currentContent = () => this.currentContent() // used by e2e test
@@ -113,7 +98,7 @@ class Editor extends Plugin {
       this.ref.clearDecorationsByPlugin = (filePath, plugin, typeOfDecoration) => this.clearDecorationsByPlugin(filePath, plugin, typeOfDecoration)      
       this.ref.keepDecorationsFor = (name, typeOfDecoration) => this.keepDecorationsFor(name, typeOfDecoration)
     }} id='editorView'>
-      <PluginViewWrapper plugin={this} />
+        <PluginViewWrapper plugin={this} />
       </div>
   }
 
@@ -213,7 +198,7 @@ class Editor extends Plugin {
     return ext && this.modes[ext] ? this.modes[ext] : this.modes.txt
   }
 
-  async handleTypeScriptDependenciesOf (path, content, readFile) {
+  async handleTypeScriptDependenciesOf (path, content, readFile, exists) {
     if (path.endsWith('.ts')) {
       // extract the import, resolve their content
       // and add the imported files to Monaco through the `addModel`
@@ -229,15 +214,20 @@ class Editor extends Plugin {
         try {
           // we can't use the fileManager plugin call directly
           // because it's itself called in a plugin context, and that causes a timeout in the plugin stack
-          const contentDep = await readFile(pathDep)
-          if (contentDep !== null) {
-            this.emit('addModel', contentDep, 'typescript', pathDep, false)
+          const pathExists = await exists(pathDep)
+          let contentDep = ''
+          if (pathExists) {
+            contentDep = await readFile(pathDep)
+            if (contentDep !== '') {
+              this.emit('addModel', contentDep, 'typescript', pathDep, false)
+            }
+          } else {
+            console.log("The file ", pathDep, " can't be found.")
           }
         } catch (e) {
           console.log(e)
         }
       }
-      
     }
   }
 
@@ -367,8 +357,8 @@ class Editor extends Plugin {
   /**
    * The position of the cursor
    */
-  getCursorPosition () {
-    return this.api.getCursorPosition()
+  getCursorPosition (offset = true) {
+    return this.api.getCursorPosition(offset)
   }
 
   /**
