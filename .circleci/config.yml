@@ -64,6 +64,12 @@ jobs:
             - v1-deps-{{ checksum "yarn.lock" }}
       - run: yarn
       - run: cd dist/libs/remix-tests && yarn
+      - run: cd dist/libs/remix-tests && yarn add @remix-project/remix-url-resolver ../../libs/remix-url-resolver
+      - run: cd dist/libs/remix-tests && yarn add @remix-project/remix-lib ../../libs/remix-lib
+      - run: cd dist/libs/remix-tests && yarn add @remix-project/remix-solidity ../../libs/remix-solidity
+      - run: cd dist/libs/remix-tests && yarn add @remix-project/remix-simulator ../../libs/remix-simulator
+      - run: cd dist/libs/remix-tests && ./bin/remix-tests ./../../../libs/remix-tests/tests/examples_0/assert_ok_test.sol
+      - run: node dist/libs/remix-tests/bin/remix-tests ./libs/remix-tests/tests/examples_0/assert_ok_test.sol
       - run: yarn run test:libs
 
   remix-ide-browser:
@@ -101,7 +107,7 @@ jobs:
       - run: yarn
       - run: yarn run downloadsolc_assets_e2e && yarn run downloadsolc_assets_dist
       - run: ls -la ./dist/apps/remix-ide/assets/js
-      - run: yarn run selenium-install
+      - run: yarn run selenium-install || yarn run selenium-install
       - run:
           name: Start Selenium
           command: yarn run selenium
@@ -147,7 +153,7 @@ jobs:
       - run: yarn
       - run: unzip ./persist/dist.zip
       - run: yarn run downloadsolc_assets_e2e && yarn run downloadsolc_assets_dist
-      - run: yarn run selenium-install
+      - run: yarn run selenium-install || yarn run selenium-install
       - run:
           name: Start Selenium
           command: yarn run selenium

@@ -11,7 +11,7 @@ import InjectedProvider from './providers/injected.js'
 import NodeProvider from './providers/node.js'
 import { execution, EventManager, helpers } from '@remix-project/remix-lib'
 import { etherScanLink } from './helper'
-import { logBuilder, cancelUpgradeMsg, cancelProxyMsg } from "@remix-ui/helper"
+import { logBuilder, cancelUpgradeMsg, cancelProxyMsg, addressToString } from "@remix-ui/helper"
 const { txFormat, txExecution, typeConversion, txListener: Txlistener, TxRunner, TxRunnerWeb3, txHelper } = execution
 const { txResultHelper: resultToRemixTx } = helpers
 const packageJson = require('../../../../package.json')
@@ -180,7 +180,7 @@ export class Blockchain extends Plugin {
       if (networkInfo.name === 'VM') this.config.set('vm/proxy', address)
       else this.config.set(`${networkInfo.name}/${networkInfo.currentFork}/${networkInfo.id}/proxy`, address)
       _paq.push(['trackEvent', 'blockchain', 'Deploy With Proxy', 'Proxy deployment successful'])
-      return this.call('udapp', 'resolveContractAndAddInstance', implementationContractObject, address)
+      this.call('udapp', 'addInstance', addressToString(address), implementationContractObject.abi, implementationContractObject.name)
     }
 
     this.runTx(args, confirmationCb, continueCb, promptCb, finalCb)
@@ -223,7 +223,7 @@ export class Blockchain extends Plugin {
         return this.call('terminal', 'logHtml', log)
       }
       _paq.push(['trackEvent', 'blockchain', 'Upgrade With Proxy', 'Upgrade Successful'])
-      return this.call('udapp', 'resolveContractAndAddInstance', newImplementationContractObject, proxyAddress)
+      this.call('udapp', 'addInstance', addressToString(proxyAddress), newImplementationContractObject.abi, newImplementationContractObject.name)
     }
     this.runTx(args, confirmationCb, continueCb, promptCb, finalCb)
   }
@@ -674,22 +674,24 @@ export class Blockchain extends Plugin {
         const hhlogs = await this.web3().eth.getHHLogsForTx(txResult.transactionHash)
 
         if (hhlogs && hhlogs.length) {
-          let finalLogs = '<b>console.log:</b>\n'
-          for (const log of hhlogs) {
-            let formattedLog
-            // Hardhat implements the same formatting options that can be found in Node.js' console.log,
-            // which in turn uses util.format: https://nodejs.org/dist/latest-v12.x/docs/api/util.html#util_util_format_format_args
-            // For example: console.log("Name: %s, Age: %d", remix, 6) will log 'Name: remix, Age: 6'
-            // We check first arg to determine if 'util.format' is needed
-            if (typeof log[0] === 'string' && (log[0].includes('%s') || log[0].includes('%d'))) {
-              formattedLog = format(log[0], ...log.slice(1))
-            } else {
-              formattedLog = log.join(' ')
-            }
-            finalLogs = finalLogs + '&emsp;' + formattedLog + '\n'
-          }
+          let finalLogs = <div><div><b>console.log:</b></div>
+          {
+            hhlogs.map((log) => {
+              let formattedLog
+              // Hardhat implements the same formatting options that can be found in Node.js' console.log,
+              // which in turn uses util.format: https://nodejs.org/dist/latest-v12.x/docs/api/util.html#util_util_format_format_args
+              // For example: console.log("Name: %s, Age: %d", remix, 6) will log 'Name: remix, Age: 6'
+              // We check first arg to determine if 'util.format' is needed
+              if (typeof log[0] === 'string' && (log[0].includes('%s') || log[0].includes('%d'))) {
+                formattedLog = format(log[0], ...log.slice(1))
+              } else {
+                formattedLog = log.join(' ')
+              }
+              return <div>{formattedLog}</div>
+          })}
+          </div>          
           _paq.push(['trackEvent', 'udapp', 'hardhat', 'console.log'])
-          this.call('terminal', 'log', { type: 'info', value: finalLogs })
+          this.call('terminal', 'logHtml', finalLogs)
         }
         execResult = await this.web3().eth.getExecutionResultFromSimulator(txResult.transactionHash)
         if (execResult) {

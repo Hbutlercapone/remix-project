@@ -434,10 +434,12 @@
           }
         },
         "test": {
-          "builder": "@nrwl/jest:jest",
+          "builder": "@nrwl/workspace:run-commands",
           "options": {
-            "jestConfig": "libs/remix-tests/jest.config.js",
-            "tsConfig": "libs/remix-tests/tsconfig.spec.json"
+            "commands": [
+              "yarn test"
+            ],
+            "cwd": "libs/remix-tests"
           }
         },
         "build": {
@@ -1450,8 +1452,28 @@
                 "glob": "*.md",
                 "input": "libs/remix-ws-templates/",
                 "output": "/"
+              },
+              {
+                "glob": "templates/**/.prettierrc",
+                "input": "libs/remix-ws-templates/src/",
+                "output": "src/"
               }
             ]
+          }
+        }
+      }
+    },
+    "remix-ui-locale-module": {
+      "root": "libs/remix-ui/locale-module",
+      "sourceRoot": "libs/remix-ui/locale-module/src",
+      "projectType": "library",
+      "architect": {
+        "lint": {
+          "builder": "@nrwl/linter:lint",
+          "options": {
+            "linter": "eslint",
+            "tsConfig": ["libs/remix-ui/editor/tsconfig.lib.json"],
+            "exclude": ["**/node_modules/**", "!libs/remix-ui/editor/**/*"]
           }
         }
       }
@@ -1540,7 +1562,7 @@
               "apps/vyper/src/styles.css"
             ],
             "scripts": [],
-            "webpackConfig": "@nrwl/react/plugins/webpack"
+            "webpackConfig": "apps/vyper/webpack.config.js"
           },
           "configurations": {
             "production": {
